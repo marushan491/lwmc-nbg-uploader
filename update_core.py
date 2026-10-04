@@ -147,7 +147,7 @@ def confirm_startup(version):
         path = Path(value)
         if path.name == 'ready.json' and path.parent.name.startswith('.lwmc-update-'):
             temp = path.with_suffix('.tmp')
-            temp.write_text(json.dumps({'version': version}), encoding='utf-8')
+            temp.write_text(json.dumps({'version': version, 'pid': os.getpid()}), encoding='utf-8')
             temp.replace(path)
 
 

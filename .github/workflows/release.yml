@@ -95,9 +95,16 @@ jobs:
       - name: Archive
         run: python package_release.py ${{ matrix.label }}
       - name: Verify update package and extracted helper
+        shell: bash
+        timeout-minutes: 5
         env:
           PYTHONPATH: .
-        run: python tests/check_update_package.py release/WorshipUploader-${{ matrix.label }}.zip ${{ matrix.label }}
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a python tests/check_update_package.py release/WorshipUploader-${{ matrix.label }}.zip ${{ matrix.label }}
+          else
+            python tests/check_update_package.py release/WorshipUploader-${{ matrix.label }}.zip ${{ matrix.label }}
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.label }}
