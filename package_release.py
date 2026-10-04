@@ -4,6 +4,8 @@ import importlib.metadata
 import shutil
 import sys
 import subprocess
+import json
+from app_version import VERSION
 
 label = sys.argv[1]
 root = Path('dist/WorshipUploader')
@@ -26,8 +28,16 @@ if label.startswith('macOS'):
     if destination.exists():
         shutil.rmtree(destination)
     shutil.copytree(Path('dist/WorshipUploader.app'), destination, symlinks=True)
+    resources = destination / 'Contents/Resources'
+    shutil.copy2('dist/update-helper', resources / 'update-helper')
+    (resources / 'update-manifest.json').write_text(json.dumps({'version': VERSION, 'platform': label}), encoding='utf-8')
+    subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(destination)], check=True)
     shutil.rmtree(root / '_internal', ignore_errors=True)
     (root / 'WorshipUploader').unlink(missing_ok=True)
+else:
+    helper = 'update-helper.exe' if label.startswith('Windows') else 'update-helper'
+    shutil.copy2(Path('dist') / helper, root / helper)
+    (root / 'update-manifest.json').write_text(json.dumps({'version': VERSION, 'platform': label}), encoding='utf-8')
 Path('release').mkdir(exist_ok=True)
 archive = Path('release') / ('WorshipUploader-' + label)
 if label.startswith('macOS'):

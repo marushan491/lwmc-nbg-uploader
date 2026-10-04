@@ -603,11 +603,52 @@ def gui(cfg):
         content = ttk.Frame(popup, padding=18)
         content.pack(fill='both', expand=True)
         ttk.Label(content, text=f"Neue Version {release['version']} verfügbar", font=('', 14, 'bold')).pack(anchor='w')
-        ttk.Label(content, text='Download entpacken und die neue Anwendung starten.\nDeine Anmeldung und Einstellungen bleiben im Benutzerverzeichnis erhalten.').pack(anchor='w', pady=12)
-        if release.get('download_url'):
-            ttk.Button(content, text='Passenden Download öffnen', command=lambda: webbrowser.open(release['download_url'])).pack(fill='x', pady=3)
+        ttk.Label(content, text='Die App lädt das Update herunter und startet anschließend neu.\nDeine Anmeldung, Einstellungen und Aufnahmen bleiben erhalten.').pack(anchor='w', pady=12)
+        install_status = tk.StringVar(value='Bereit zum Aktualisieren.')
+        ttk.Label(content, textvariable=install_status, wraplength=480).pack(anchor='w', pady=(0, 8))
+        installing = False
+        def install():
+            nonlocal busy, installing
+            if busy:
+                messagebox.showinfo('Vorgang läuft', 'Bitte zuerst den laufenden Vorgang abschließen oder die Anmeldung abbrechen.', parent=popup)
+                return
+            busy = installing = True
+            for b in buttons:
+                b.configure(state='disabled')
+            start_button.configure(state='disabled')
+            install_button.configure(state='disabled')
+            later_button.configure(state='disabled')
+            progress.start(12)
+            def work():
+                try:
+                    from auto_update import prepare_update
+                    prepared = prepare_update(release, progress=lambda text: events.put(('install_progress', (install_status, text))))
+                    events.put(('install_ready', (prepared, popup, install_status, failed)))
+                except Exception as exc:
+                    events.put(('install_error', (str(exc), failed)))
+            threading.Thread(target=work, daemon=True).start()
+        def failed(error):
+            nonlocal busy, installing
+            busy = installing = False
+            progress.stop()
+            for b in buttons:
+                b.configure(state='normal')
+            start_button.configure(state='normal')
+            install_button.configure(state='normal')
+            later_button.configure(state='normal')
+            status.set('Update konnte nicht installiert werden. Deine Anwendung bleibt erhalten.')
+            install_status.set(error)
+        install_button = ttk.Button(content, text='Jetzt aktualisieren und neu starten', style='Primary.TButton', command=install)
+        if FROZEN and release.get('download_url'):
+            install_button.pack(fill='x', pady=3)
+        else:
+            install_status.set('Auto-Update ist im Desktop-Paket verfügbar. Quellcode bitte über Git aktualisieren.')
+            if release.get('download_url'):
+                ttk.Button(content, text='Desktop-Paket herunterladen', command=lambda: webbrowser.open(release['download_url'])).pack(fill='x', pady=3)
         ttk.Button(content, text='Release / Änderungen öffnen', command=lambda: webbrowser.open(release['url'])).pack(fill='x', pady=3)
-        ttk.Button(content, text='Später', command=popup.destroy).pack(fill='x', pady=3)
+        later_button = ttk.Button(content, text='Später', command=popup.destroy)
+        later_button.pack(fill='x', pady=3)
+        popup.protocol('WM_DELETE_WINDOW', lambda: None if installing else popup.destroy())
     def poll():
         nonlocal busy, login_active
         while True:
@@ -619,7 +660,34 @@ def gui(cfg):
                 generation, kind, value = value
                 if generation != login_generation:
                     continue
-            if kind == 'update':
+            if kind == 'install_progress':
+                variable, text = value
+                variable.set(text)
+                status.set(text)
+            elif kind == 'install_error':
+                error, failed = value
+                failed(error)
+            elif kind == 'install_ready':
+                prepared, popup, variable, failed = value
+                try:
+                    from auto_update import start_installer
+                    process = start_installer(prepared)
+                    variable.set('Update wird installiert. Die App startet gleich neu …')
+                    deadline = time.monotonic() + 30
+                    def handoff():
+                        manifest = prepared[1]
+                        if manifest.with_name('started.json').exists():
+                            root.destroy()
+                        elif process.poll() is not None or time.monotonic() > deadline:
+                            if process.poll() is None:
+                                process.terminate()
+                            failed('Der Update-Helfer konnte nicht gestartet werden. Bitte erneut versuchen.')
+                        else:
+                            root.after(200, handoff)
+                    root.after(200, handoff)
+                except Exception as exc:
+                    failed(str(exc))
+            elif kind == 'update':
                 release, manual, error = value
                 update_button.configure(state='normal')
                 if error:
@@ -654,12 +722,21 @@ def gui(cfg):
             login_cancel.set()
             root.destroy()
         elif busy:
-            messagebox.showinfo('Upload läuft', 'Bitte den laufenden Vorgang abschließen lassen.')
+            messagebox.showinfo('Vorgang läuft', 'Bitte den laufenden Vorgang abschließen lassen.')
         else:
             root.destroy()
     root.protocol('WM_DELETE_WINDOW', close)
     poll()
     root.after(1500, start_update_check)
+    from update_core import confirm_startup, cleanup_finished
+    confirm_startup(VERSION)
+    if FROZEN:
+        try:
+            from auto_update import installation
+            target, _, _ = installation()
+            cleanup_finished(target)
+        except (OSError, RuntimeError):
+            pass
     root.mainloop()
 
 

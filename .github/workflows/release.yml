@@ -78,18 +78,26 @@ jobs:
           fi
       - name: Bundle desktop app
         run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name WorshipUploader --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all google.auth --collect-all requests_toolbelt audio_uploader.py
+      - name: Bundle independent update helper
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name update-helper update_helper.py
       - name: Smoke test executable
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             dist/WorshipUploader/WorshipUploader.exe --help
             dist/WorshipUploader/WorshipUploader.exe --version
+            dist/update-helper.exe --self-test
           else
             dist/WorshipUploader/WorshipUploader --help
             dist/WorshipUploader/WorshipUploader --version
+            dist/update-helper --self-test
           fi
       - name: Archive
         run: python package_release.py ${{ matrix.label }}
+      - name: Verify update package and extracted helper
+        env:
+          PYTHONPATH: .
+        run: python tests/check_update_package.py release/WorshipUploader-${{ matrix.label }}.zip ${{ matrix.label }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.label }}
@@ -123,4 +131,4 @@ jobs:
             gh release upload "$TAG" downloads/*.zip --clobber
             exit 0
           fi
-          gh release create "$TAG" downloads/*.zip --target "$COMMIT_SHA" --title "Worship Audio Uploader $TAG" --notes 'Windows, Linux und macOS: ZIP entpacken und WorshipUploader starten. FFmpeg separat installieren; Anleitung liegt bei. Neu: übersichtliche Dateibereiche und eine Hauptaktion. MP3 speichern funktioniert offline ohne Anmeldung. Für MP3 speichern und hochladen erscheinen die Kontooptionen. Außerdem: WAV/MP3 schneiden, teilen, verbinden, Teile zuordnen und GitHub-Update-Meldungen.'
+          gh release create "$TAG" downloads/*.zip --target "$COMMIT_SHA" --title "Worship Audio Uploader $TAG" --notes 'Neu: Jetzt aktualisieren und neu starten lädt das passende GitHub-Paket, prüft SHA-256, ersetzt die App und startet sie neu. Bei fehlgeschlagenem Start wird die alte Version wiederhergestellt. Anmeldung, Einstellungen und eigene Dateien bleiben erhalten. Diese Version einmalig installieren, danach sind Updates direkt in der App möglich. Windows, Linux und beide Macs; FFmpeg separat erforderlich.'

@@ -91,11 +91,13 @@ Beispiel: Predigt 1 → Spreaker, Predigt 2 → Spreaker, Worship → Drive. Die
 
 **MP3 speichern** ist im Hauptfenster vorausgewählt. Dateien hinzufügen, bei Bedarf schneiden, dann den einzigen Hauptbutton **MP3 speichern** drücken und einen Zielordner wählen. Es erfolgt kein Upload und keine Spreaker-/Google-Anmeldung; auch Show-ID und Google-Zugangsdaten sind dafür nicht nötig. Predigt-/Spreaker-Teile werden normalisiert, bei Worship entscheidet der Schalter **Worship-Lautstärke normalisieren**. Die Dateien liegen getrennt in den Unterordnern `spreaker` und `drive`. FFmpeg muss installiert sein. Das Speichern funktioniert auch offline und bei Browser-403. Erst bei **MP3 speichern und hochladen** erscheinen die Konto- und Veröffentlichungsoptionen.
 
-## GitHub-Update-Meldung
+## Automatische Updates über GitHub
 
 Die App prüft beim Start höchstens einmal täglich den neuesten stabilen Release des öffentlichen Projekts `marushan491/lwmc-nbg-uploader`. **Nach Updates suchen** prüft jederzeit manuell. In den Einstellungen lässt sich die automatische Prüfung ausschalten. Die Prüfung benötigt Internet und sendet keine Aufnahmen oder OAuth-Zugangsdaten an GitHub.
 
-Bei einer neueren Version erscheint eine Meldung mit Release-Link und passendem Download für dein Paket/OS. Es gibt bewusst keinen Austausch laufender Programmdateien: ZIP entpacken, neue Anwendung starten und die alte schließen. Gespeicherte Konfiguration und Anmeldedaten im Benutzerverzeichnis bleiben erhalten. Die Versionsnummer des Binärpakets entspricht dem Release-Tag. Über den Python-Quellcode ist auch `python audio_uploader.py check-update` möglich.
+Bei einer neueren Version klickst du im Desktop-Paket auf **Jetzt aktualisieren und neu starten**. Die App lädt das passende Paket für Windows, Linux, Mac Intel oder Apple Silicon herunter, prüft die von GitHub gelieferte SHA-256-Prüfsumme und bereitet es vor. Erst nach erfolgreicher Prüfung schließt sie sich; ein unabhängiger Update-Helfer ersetzt das Programm und startet die neue Version. Bis die neue Oberfläche ihren Start bestätigt, bleibt eine Sicherung erhalten. Scheitert der Start, wird die alte Version wiederhergestellt und gestartet. Während Konvertierung, Upload oder Anmeldung wird kein Update installiert.
+
+Gespeicherte Konfiguration und Anmeldedaten im Benutzerverzeichnis bleiben erhalten. Eigene Dateien neben der Windows-/Linux-App werden übernommen. Die App muss in einem beschreibbaren Ordner liegen; unter macOS die `.app` zuerst aus dem Download-Paket in Programme oder einen eigenen Ordner verschieben. Es werden keine Administratorrechte angefordert. Diese Version mit Update-Helfer muss einmalig installiert werden; ältere Versionen können nur den Download öffnen. Fertige Update-Arbeitsordner werden beim nächsten Start bereinigt. Die Versionsnummer des Binärpakets entspricht dem Release-Tag. Quellcode-Installationen werden weiterhin über Git aktualisiert; `python audio_uploader.py check-update` zeigt den neuesten Release.
 
 ## Anmeldung abbrechen und 403
 

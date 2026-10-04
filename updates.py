@@ -1,4 +1,4 @@
-"""Read-only release check; opens matching downloads, never replaces a running app."""
+"""GitHub release discovery for update notifications and installation."""
 import platform
 import re
 import urllib.parse
@@ -51,4 +51,6 @@ def check_update(current=VERSION, label=None):
     download = asset.get('browser_download_url') if asset else None
     if download and not trusted_release_url(download, download=True):
         raise RuntimeError('GitHub hat einen unerwarteten Download-Link geliefert.')
-    return {'version': tag, 'url': url, 'download_url': download, 'asset_name': wanted if download else None}
+    return {'version': tag, 'url': url, 'download_url': download, 'asset_name': wanted if download else None,
+            'digest': asset.get('digest') if asset else None, 'size': asset.get('size') if asset else None,
+            'platform': label or platform_label()}
