@@ -10,7 +10,7 @@ import tempfile
 import time
 from auto_update import extract_archive, installation, prepare_update, start_installer
 from app_version import VERSION
-from update_core import clean_environment
+from update_core import clean_environment, wait_for_exit
 from unittest.mock import patch
 
 archive, label = Path(sys.argv[1]).resolve(), sys.argv[2]
@@ -45,6 +45,8 @@ with tempfile.TemporaryDirectory() as d:
             while time.monotonic() < deadline:
                 if path.exists():
                     return
+                for error_path in destination.glob('.lwmc-update-*/error.json'):
+                    raise RuntimeError(error_path.read_text())
                 time.sleep(.2)
             raise RuntimeError('Missing update acknowledgement: ' + str(path))
         try:
@@ -79,6 +81,7 @@ with tempfile.TemporaryDirectory() as d:
             if restarted_pid:
                 try:
                     os.kill(restarted_pid, signal.SIGTERM)
+                    wait_for_exit(restarted_pid, timeout=15)
                 except ProcessLookupError:
                     pass
             if installer and installer.poll() is None:
