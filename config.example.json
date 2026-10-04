@@ -15,5 +15,8 @@
     "bitrate_kbps": 192,
     "target_lufs": -16,
     "output_dir": "output"
+  },
+  "updates": {
+    "check_on_start": true
   }
 }

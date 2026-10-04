@@ -26,22 +26,46 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Set packaged version
+        shell: bash
+        env:
+          APP_PLATFORM: ${{ matrix.label }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          python - <<'PYTHON'
+          import os
+          from pathlib import Path
+          import re
+          version = os.environ['REF_NAME'].removeprefix('v') if os.environ['REF_TYPE'] == 'tag' else '1.1.' + os.environ['RUN_NUMBER']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', version)
+          Path('app_version.py').write_text('VERSION = ' + repr(version) + '\nBUILD_LABEL = ' + repr(os.environ['APP_PLATFORM']) + '\n')
+          PYTHON
       - name: Linux GUI libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y python3-tk ffmpeg xvfb
       - name: Install dependencies
         run: python -m pip install -r requirements.txt pyinstaller
       - name: Tests
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a python -m unittest discover -s tests -v
+          else
+            python -m unittest discover -s tests -v
+          fi
       - name: Bundle desktop app
-        run: python -m PyInstaller --noconfirm --clean --onedir --console --name WorshipUploader --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all google.auth --collect-all requests_toolbelt audio_uploader.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name WorshipUploader --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all google.auth --collect-all requests_toolbelt audio_uploader.py
       - name: Smoke test executable
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             dist/WorshipUploader/WorshipUploader.exe --help
+            dist/WorshipUploader/WorshipUploader.exe --version
           else
             dist/WorshipUploader/WorshipUploader --help
+            dist/WorshipUploader/WorshipUploader --version
           fi
       - name: Archive
         run: python package_release.py ${{ matrix.label }}
@@ -72,10 +96,10 @@ jobs:
           if [ "$REF_TYPE" = "tag" ]; then
             TAG="$REF_NAME"
           else
-            TAG="v1.0.$RUN_NUMBER"
+            TAG="v1.1.$RUN_NUMBER"
           fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" downloads/*.zip --clobber
             exit 0
           fi
-          gh release create "$TAG" downloads/*.zip --target "$COMMIT_SHA" --title "Worship Audio Uploader $TAG" --notes 'Windows, Linux und macOS: ZIP entpacken und WorshipUploader starten. FFmpeg separat installieren; Anleitung liegt bei. Spreaker und Google Drive einmalig in den Einstellungen anmelden.'
+          gh release create "$TAG" downloads/*.zip --target "$COMMIT_SHA" --title "Worship Audio Uploader $TAG" --notes 'Windows, Linux und macOS: ZIP entpacken und WorshipUploader starten. FFmpeg separat installieren; Anleitung liegt bei. Neu: WAV/MP3 schneiden, teilen, verbinden und Teile zuordnen; GitHub-Update-Meldung. Spreaker und Google Drive einmalig in den Einstellungen anmelden.'

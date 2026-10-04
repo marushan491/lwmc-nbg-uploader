@@ -3,6 +3,7 @@ from pathlib import Path
 import importlib.metadata
 import shutil
 import sys
+import subprocess
 
 label = sys.argv[1]
 root = Path('dist/WorshipUploader')
@@ -19,8 +20,17 @@ for distribution in importlib.metadata.distributions():
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(src, dest)
 if label.startswith('macOS'):
-    launcher = root / 'Start.command'
-    launcher.write_text('#!/bin/bash\ncd -- "$(dirname -- "$0")"\nexec ./WorshipUploader\n')
-    launcher.chmod(0o755)
+    # Ship the native .app, without the Terminal-launching Start.command.
+    root.mkdir(exist_ok=True)
+    destination = root / 'WorshipUploader.app'
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(Path('dist/WorshipUploader.app'), destination, symlinks=True)
+    shutil.rmtree(root / '_internal', ignore_errors=True)
+    (root / 'WorshipUploader').unlink(missing_ok=True)
 Path('release').mkdir(exist_ok=True)
-shutil.make_archive(str(Path('release') / ('WorshipUploader-' + label)), 'zip', 'dist', 'WorshipUploader')
+archive = Path('release') / ('WorshipUploader-' + label)
+if label.startswith('macOS'):
+    subprocess.run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(root), str(archive.with_suffix('.zip'))], check=True)
+else:
+    shutil.make_archive(str(archive), 'zip', 'dist', 'WorshipUploader')

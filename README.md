@@ -4,20 +4,20 @@ Eine Python-Anwendung mit Dateiauswahl und Terminal-Modus für zwei unabhängige
 
 | Weg | Verarbeitung | Ziel |
 |---|---|---|
-| Spreaker | WAV → Lautheit messen → normalisieren → MP3 | Episode in ausgewählter Spreaker-Show |
-| Worship | WAV → optional normalisieren → MP3 | Google-Drive-Ordner |
+| Spreaker | WAV/MP3 → Lautheit messen → normalisieren → MP3 | Episode in ausgewählter Spreaker-Show |
+| Worship | WAV/MP3 → optional normalisieren → MP3 | Google-Drive-Ordner |
 
-Separate WAV-Dateilisten; beide Wege können gleichzeitig laufen. Innerhalb eines Wegs werden Dateien nacheinander verarbeitet. Spreaker wird immer normalisiert, Worship nach Auswahl. Standard: Stereo, 44,1 kHz, 192 kbit/s CBR, Normalisierung auf −16 LUFS, True-Peak-Ziel −1,5 dBTP, LRA-Ziel 11. FFmpeg verwendet zweipassiges `loudnorm` und bei Bedarf dessen dynamischen Modus. MP3-Encoding kann die gemessene Lautheit/Peaks leicht verändern. Original-WAVs bleiben erhalten. Stille Dateien werden bei aktivierter Normalisierung mit einer verständlichen Meldung abgewiesen.
+Separate WAV/MP3-Dateilisten; beide Wege können gleichzeitig laufen. Innerhalb eines Wegs werden Dateien nacheinander verarbeitet. Spreaker wird immer normalisiert, Worship nach Auswahl. Standard: Stereo, 44,1 kHz, 192 kbit/s CBR, Normalisierung auf −16 LUFS, True-Peak-Ziel −1,5 dBTP, LRA-Ziel 11. FFmpeg verwendet zweipassiges `loudnorm` und bei Bedarf dessen dynamischen Modus. MP3-Encoding kann die gemessene Lautheit/Peaks leicht verändern. Original-WAVs und Original-MP3s bleiben erhalten. Stille Dateien werden bei aktivierter Normalisierung mit einer verständlichen Meldung abgewiesen.
 
 ## Downloads und Voraussetzungen
 
-Der Quellcode läuft auf Windows, Linux und macOS mit **Python 3.10+**, **Tkinter** und **FFmpeg**. Die Oberfläche ist auf allen drei Systemen identisch. Die separat gebauten Release-ZIPs enthalten Python und die Python-Abhängigkeiten. **FFmpeg wird separat installiert und muss im PATH liegen.** Die Anwendung enthält keine persönlichen Zugangsdaten.
+Der Quellcode läuft auf Windows, Linux und macOS mit **Python 3.10+**, **Tkinter** und **FFmpeg** (einschließlich `ffprobe`; für Vorschau zusätzlich `ffplay`). Die Oberfläche ist auf allen drei Systemen identisch. Die separat gebauten Release-ZIPs enthalten Python und die Python-Abhängigkeiten. **FFmpeg wird separat installiert und muss im PATH liegen.** Die Anwendung enthält keine persönlichen Zugangsdaten.
 
-Der Workflow `.github/workflows/release.yml` baut Windows x64, Linux x64, macOS Intel und macOS Apple Silicon auf jeweils nativen GitHub-Runnern. Ein Push auf `main` oder ein `v*`-Tag veröffentlicht alle vier ZIPs erst, wenn alle Builds erfolgreich sind. Bei einem Push auf `main` wird ein Release-Tag `v1.0.<Workflow-Nummer>` erzeugt. Manuell ausgelöste Builds erscheinen unter Actions → Artifacts. Die Binärpakete werden nicht als bereits vorhanden dargestellt, bevor ein Build tatsächlich abgeschlossen wurde.
+Der Workflow `.github/workflows/release.yml` baut Windows x64, Linux x64, macOS Intel und macOS Apple Silicon auf jeweils nativen GitHub-Runnern. Ein Push auf `main` oder ein `v*`-Tag veröffentlicht alle vier ZIPs erst, wenn alle Builds erfolgreich sind. Bei einem Push auf `main` wird ein Release-Tag `v1.1.<Workflow-Nummer>` erzeugt. Manuell ausgelöste Builds erscheinen unter Actions → Artifacts. Die Binärpakete werden nicht als bereits vorhanden dargestellt, bevor ein Build tatsächlich abgeschlossen wurde.
 
 ### Windows
 
-1. Für das Skriptpaket Python von https://www.python.org/downloads/windows/ installieren; Python zum PATH hinzufügen. Bei fertigen Release-Binärpaketen entfällt dies.
+1. Für das Skriptpaket Python von https://www.python.org/downloads/windows/ installieren; Python zum PATH hinzufügen. Bei fertigen Release-Binärpaketen entfällt dies. Das Windows-Binärpaket öffnet keine Konsole; auch die FFmpeg-Unterprozesse starten ohne zusätzliche Terminal-Fenster.
 2. FFmpeg installieren, beispielsweise im Terminal:
 
    ```powershell
@@ -55,21 +55,49 @@ chmod +x setup.sh start.sh Start.command
 ./start.sh
 ```
 
-Alternativ nach der Einrichtung `Start.command` doppelklicken. Im Binärpaket die enthaltene `Start.command` öffnen. Intel und Apple Silicon haben getrennte ZIPs. Die Builds sind nicht mit einem Apple-Developer-Zertifikat signiert oder notarisiert; macOS kann beim ersten Start eine Freigabe unter Datenschutz & Sicherheit verlangen.
+Alternativ nach der Einrichtung `Start.command` doppelklicken. Im Binärpaket **WorshipUploader.app** doppelklicken; die App öffnet kein Terminal-Fenster. Intel und Apple Silicon haben getrennte ZIPs. Die Builds sind nicht mit einem Apple-Developer-Zertifikat signiert oder notarisiert; macOS kann beim ersten Start eine Freigabe unter Datenschutz & Sicherheit verlangen.
 
 ## Einmalige Einrichtung über die Oberfläche
 
-1. **Einstellungen** öffnen.
+1. **Einrichtungshilfe** öffnen, wenn du noch keine OAuth-Zugangsdaten hast. Danach **Einstellungen** öffnen.
 2. Für Spreaker Client-ID, Client-Secret, Show-ID und Redirect-URI eintragen.
 3. Für Drive die OAuth-Desktop-JSON auswählen, optional eine Ordner-ID eintragen.
 4. Speichern, anschließend **Spreaker anmelden** und/oder **Drive anmelden**.
-5. WAV-Dateien in der jeweiligen Liste auswählen.
+5. WAV- oder MP3-Dateien direkt auswählen oder im **Audio-Editor** Teile vorbereiten.
 6. Optional Worship normalisieren; optional Parallelbetrieb ausschalten.
 7. **Konvertierung / Upload starten**.
 
 Der Episodentitel und der Drive-Dateiname werden aus dem WAV-Dateinamen abgeleitet. Zum Beispiel `Predigt 04.10.2026.wav` → Titel `Predigt 04.10.2026`. Eine Beschreibung für Spreaker lässt sich in `config.json` setzen.
 
 **Spreaker ist standardmäßig privat.** Erst die Option „Spreaker öffentlich veröffentlichen“ bzw. `--public` macht die neue Episode öffentlich. Privat ist kein Entwurf. Die öffentliche Sichtbarkeit des GitHub-Projekts beeinflusst diese Einstellung nicht. Spreaker verarbeitet eine angenommene Episode noch serverseitig; die Uploadbestätigung bedeutet nicht, dass sie sofort abspielbar ist.
+
+## Aufnahme schneiden und teilen
+
+**Aufnahme schneiden / teilen** öffnet den Editor:
+
+1. Eine oder mehrere WAV-/MP3-Dateien öffnen. Per Dateiauswahl oben zwischen den Aufnahmen wechseln.
+2. Start und Ende als Sekunden, `MM:SS` oder `HH:MM:SS.mmm` eingeben. Alternativ den passenden Marker wählen und in die Wellenform klicken.
+3. Titel und Ziel (**Spreaker**, **Drive (Worship)** oder **Beide**) wählen und **Teil hinzufügen**.
+4. Für zwei Spreaker-Teile **Spreaker** wählen, den Teilungsmarker setzen und **Bei Teilung teilen** klicken.
+5. Für den Worship-Teil den gewünschten anderen Bereich wählen, Ziel **Drive (Worship)** setzen und hinzufügen.
+6. **Auswahl ausschneiden** entfernt einen Bereich aus allen geplanten Teilen dieser Originaldatei. Die übrigen Bereiche werden beim Export verbunden; die Originaldatei wird nicht gelöscht oder überschrieben.
+7. Markierte Teile können aus der Planung gelöscht, einem anderen Ziel zugeordnet oder in Listenreihenfolge verbunden werden. So lassen sich auch zwei getrennte Aufnahme-Dateien zusammenführen.
+8. **Rückgängig** stellt den letzten Planungsstand wieder her. **Auswahl anhören** spielt die behaltenen Bereiche ab; dafür wird `ffplay` benötigt.
+9. **Teile erzeugen und in die Upload-Listen übernehmen** erzeugt verlustfreie PCM-WAVs. Danach im Hauptfenster Normalisierung wählen und Upload starten.
+
+Beispiel: Predigt 1 → Spreaker, Predigt 2 → Spreaker, Worship → Drive. Die Zwischen-WAVs liegen unter `~/.audio-uploader/edits`; sie beanspruchen deutlich mehr Platz als MP3. Normalisierung und abschließende MP3-Konvertierung erfolgen erst beim Upload. MP3-Eingaben werden decodiert; die Schnittfunktion verursacht keinen zusätzlichen MP3-Kodierungsschritt. An Schnittstellen können harte Übergänge auftreten; es werden keine automatischen Crossfades eingefügt.
+
+## GitHub-Update-Meldung
+
+Die App prüft beim Start höchstens einmal täglich den neuesten stabilen Release des öffentlichen Projekts `marushan491/lwmc-nbg-uploader`. **Nach Updates suchen** prüft jederzeit manuell. In den Einstellungen lässt sich die automatische Prüfung ausschalten. Die Prüfung benötigt Internet und sendet keine Aufnahmen oder OAuth-Zugangsdaten an GitHub.
+
+Bei einer neueren Version erscheint eine Meldung mit Release-Link und passendem Download für dein Paket/OS. Es gibt bewusst keinen Austausch laufender Programmdateien: ZIP entpacken, neue Anwendung starten und die alte schließen. Gespeicherte Konfiguration und Anmeldedaten im Benutzerverzeichnis bleiben erhalten. Die Versionsnummer des Binärpakets entspricht dem Release-Tag. Über den Python-Quellcode ist auch `python audio_uploader.py check-update` möglich.
+
+## Anmeldung abbrechen und 403
+
+Wenn die Browserseite geschlossen wird oder 403 anzeigt, kann die App das Schließen des externen Browser-Tabs nicht erkennen. **Anmeldung abbrechen** gibt die Bedienelemente sofort wieder frei. Verspätete Antworten eines abgebrochenen Versuchs sperren einen neueren Vorgang nicht erneut. Ohne Antwort wird der Browser-Login nach 120 Sekunden beendet. Auch das Schließen der Anwendung während der Anmeldung bricht den Wartevorgang ab.
+
+Ein 403 auf der Anbieter-Browserseite lässt sich nicht allein durch den Statuscode eindeutig bestimmen. Bei Spreaker die eigene OAuth-App, Client-ID und exakt registrierte Redirect-URI prüfen. Bei Google die Drive API, die Desktop-Client-JSON und bei einer persönlichen External-Test-App den verwendeten Google-Account in **Google Auth Platform → Audience → Test users** prüfen. Workspace-Administratoren können Apps blockieren. Die **Einrichtungshilfe** erklärt beide Wege direkt in der Anwendung. Ein Browser-403 wird nicht als erfolgreich behoben behauptet; der Anbieter muss die Freigabe tatsächlich zulassen.
 
 ## Spreaker-Zugang
 
@@ -148,7 +176,7 @@ Zuerst nur lokal MP3s erzeugen (keine Anmeldung erforderlich):
 ./start.sh upload --spreaker '/pfad/Predigt.wav' --drive '/pfad/Worship.wav' --convert-only
 ```
 
-Auf Windows `start-windows.bat` statt `./start.sh` verwenden. Im Binärpaket `WorshipUploader` bzw. `WorshipUploader.exe` aufrufen. `--sequential` deaktiviert parallele Verarbeitung. Exit-Codes: 0 erfolgreich, 1 Fehler, 130 Abbruch.
+Auf Windows `start-windows.bat` statt `./start.sh` verwenden. Für Terminal-Aufrufe auf Windows/macOS den Python-Quellcode verwenden; die Desktop-Binärpakete starten ohne Konsole. Unter Linux unterstützt auch die Binärdatei den Terminal-Modus. `--sequential` deaktiviert parallele Verarbeitung. Exit-Codes: 0 erfolgreich, 1 Fehler, 130 Abbruch.
 
 ## Dateien, Fehler und Wiederholungen
 
@@ -167,7 +195,7 @@ Auf Windows `start-windows.bat` statt `./start.sh` verwenden. Im Binärpaket `Wo
 python3 -m unittest discover -s tests -v
 ```
 
-Die Audio-Integrationstests benötigen `ffmpeg` und `ffprobe`; ohne diese werden nur die Audiotests übersprungen. Die übrigen Tests prüfen Parallelbetrieb, getrennte Normalisierung, Fehlerisolation und das Überspringen bereits bestätigter Uploads.
+Die Audio-Integrationstests benötigen `ffmpeg` und `ffprobe`; ohne diese werden nur die Audiotests übersprungen. Weitere Tests prüfen Parallelbetrieb, getrennte Normalisierung, Fehlerisolation, Schnitt/Verbindung, unveränderte Originale, Update-Versionen, OAuth-State und Anmelde-Abbruch. GUI-Tests prüfen die Zielzuordnung und dass eine verspätete OAuth-Antwort die Oberfläche nicht erneut sperrt. Sie benötigen eine grafische Sitzung; auf Linux führt CI sie mit Xvfb aus.
 
 Repository: https://github.com/marushan491/lwmc-nbg-uploader
 
@@ -176,8 +204,8 @@ Ein Push auf `main` startet automatisch die Builds und erstellt anschließend ei
 
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 GitHub Actions muss aktiviert sein. Der Workflow veröffentlicht Download-ZIPs mit Drittanbieter-Lizenzhinweisen. Keine Spreaker-/Google-Zugangsdaten sind für den Build nötig. Plattform-Builds werden erst durch tatsächliche GitHub-Actions-Läufe geprüft; lokale Tests beweisen keine native Windows-/macOS-Ausführung. Live-Uploads benötigen eigene Konten und wurden nicht durch die automatischen Tests ausgelöst.

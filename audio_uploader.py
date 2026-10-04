@@ -20,6 +20,8 @@ import threading
 import time
 import urllib.parse
 import webbrowser
+from app_version import VERSION
+from audio_paths import find_tool
 
 FROZEN = getattr(sys, 'frozen', False)
 BASE = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -50,6 +52,7 @@ def config():
     cfg.setdefault('spreaker', {})
     cfg.setdefault('drive', {})
     cfg.setdefault('audio', {})
+    cfg.setdefault('updates', {})
     return cfg
 
 
@@ -59,10 +62,12 @@ def request_ok(response, label):
     return response.json()
 
 
-def spreaker_exchange(data):
+def spreaker_exchange(data, cancel=None):
     import requests
     token = request_ok(requests.post('https://api.spreaker.com/oauth2/token',
                                     data=data, timeout=(15, 60)), 'Spreaker Anmeldung')
+    if cancel is not None and cancel.is_set():
+        raise RuntimeError('Anmeldung abgebrochen.')
     if not token.get('access_token'):
         raise RuntimeError('Spreaker hat keinen Access-Token geliefert.')
     token['expires_at'] = time.time() + float(token.get('expires_in', 3600))
@@ -88,7 +93,7 @@ def spreaker_token(cfg):
     return token['access_token']
 
 
-def login_spreaker(cfg, manual=False):
+def login_spreaker(cfg, manual=False, cancel=None):
     sp = cfg['spreaker']
     client = sp.get('client_id') or input('Spreaker Client-ID: ').strip()
     secret = os.environ.get('SPREAKER_CLIENT_SECRET') or sp.get('client_secret') or getpass.getpass('Client-Secret: ')
@@ -102,42 +107,22 @@ def login_spreaker(cfg, manual=False):
         callback = input('Komplette Weiterleitungs-URL einfügen (enthält code und state): ').strip()
         params = urllib.parse.parse_qs(urllib.parse.urlsplit(callback).query)
     else:
+        from auth_flow import CallbackServer
         parsed = urllib.parse.urlsplit(redirect)
         if parsed.hostname not in ('127.0.0.1', 'localhost') or parsed.scheme != 'http':
             raise RuntimeError('Automatischer Login benötigt eine HTTP-Loopback-Redirect-URI; sonst --manual verwenden.')
-        params = {}
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                if urllib.parse.urlsplit(self.path).path != parsed.path:
-                    self.send_error(404)
-                    return
-                incoming = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-                if incoming.get('state') != [state]:
-                    self.send_error(400, 'Invalid state')
-                    return
-                params.update(incoming)
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b'Login erhalten. Dieses Fenster kann geschlossen werden.')
-            def log_message(self, *args):
-                pass
-        with http.server.HTTPServer(('127.0.0.1', parsed.port or 80), Handler) as server:
-            server.timeout = 1
-            print('Anmeldung im Browser:\n' + url)
-            webbrowser.open(url)
-            deadline = time.monotonic() + 300
-            while not params and time.monotonic() < deadline:
-                server.handle_request()
+        with CallbackServer(parsed.port or 80, parsed.path or '/', cancel=cancel) as callback:
+            params = callback.wait(url, state)
     if params.get('state') != [state] or not params.get('code'):
         raise RuntimeError('Login abgebrochen, abgelaufen oder ungültiger OAuth-State.')
     spreaker_exchange({'grant_type': 'authorization_code', 'client_id': client,
-                      'client_secret': secret, 'redirect_uri': redirect, 'code': params['code'][0]})
+                      'client_secret': secret, 'redirect_uri': redirect, 'code': params['code'][0]}, cancel=cancel)
     # Retain credentials for refresh; state files have owner-only permissions on Unix.
     save_json(STATE / 'spreaker_client.json', {'client_id': client, 'client_secret': secret})
     print('Spreaker angemeldet.')
 
 
-def drive_service(cfg, login=False, port=0, no_browser=False):
+def drive_service(cfg, login=False, port=0, no_browser=False, cancel=None):
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -156,9 +141,20 @@ def drive_service(cfg, login=False, port=0, no_browser=False):
             client_path = BASE / client_path
         if not client_path.is_file():
             raise RuntimeError(f'OAuth-Desktop-JSON fehlt: {client_path}')
+        if 'installed' not in read_json(client_path):
+            raise RuntimeError('Bitte eine Google-OAuth-JSON vom Typ Desktop-App verwenden, keinen Web-Client oder Service-Account-Key. Einrichtungshilfe öffnen.')
         flow = InstalledAppFlow.from_client_secrets_file(str(client_path), [scope])
-        creds = flow.run_local_server(host='127.0.0.1', port=port, open_browser=not no_browser,
-                                     timeout_seconds=300)
+        from auth_flow import CallbackServer
+        with CallbackServer(port=port, cancel=cancel) as callback:
+            flow.redirect_uri = callback.redirect_uri
+            url, state = flow.authorization_url(access_type='offline', prompt='consent')
+            callback.wait(url, state, open_browser=not no_browser)
+            # oauthlib validates OAuth state; HTTPS here only permits parsing the received
+            # loopback response, matching InstalledAppFlow.run_local_server's behavior.
+            flow.fetch_token(authorization_response=callback.response_url.replace('http:', 'https:', 1))
+            if cancel is not None and cancel.is_set():
+                raise RuntimeError('Anmeldung abgebrochen.')
+            creds = flow.credentials
         save_json(token_path, json.loads(creds.to_json()))
     import httplib2
     from google_auth_httplib2 import AuthorizedHttp
@@ -185,8 +181,9 @@ def drive_folder(service, cfg):
 
 
 def ffmpeg(args):
-    proc = subprocess.run(['ffmpeg', '-hide_banner', '-nostdin', '-threads', '2', *args],
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.run([find_tool('ffmpeg') or 'ffmpeg', '-hide_banner', '-nostdin', '-threads', '2', *args],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                          creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
     if proc.returncode:
         raise RuntimeError('FFmpeg: ' + proc.stderr[-2000:])
     return proc.stderr
@@ -260,14 +257,14 @@ def fingerprint(source, options):
 
 def run_jobs(cfg, sp_files, drive_files, normalize_drive=False, parallel=True,
              public=False, convert_only=False, force=False, log=print):
-    if not shutil.which('ffmpeg'):
+    if not find_tool('ffmpeg'):
         raise RuntimeError('FFmpeg fehlt. Siehe README.')
     all_files = [Path(p).expanduser().resolve() for p in [*sp_files, *drive_files]]
     if not all_files:
-        raise RuntimeError('Mindestens eine WAV-Datei auswählen.')
+        raise RuntimeError('Mindestens eine WAV- oder MP3-Datei auswählen.')
     for p in all_files:
-        if not p.is_file() or p.suffix.lower() != '.wav':
-            raise RuntimeError(f'Keine gültige WAV-Datei: {p}')
+        if not p.is_file() or p.suffix.lower() not in ('.wav', '.mp3'):
+            raise RuntimeError(f'Keine gültige WAV- oder MP3-Datei: {p}')
     bitrate = int(cfg['audio'].get('bitrate_kbps', 192))
     lufs = float(cfg['audio'].get('target_lufs', -16))
     if bitrate not in (64, 96, 128, 160, 192, 224, 256, 320) or not math.isfinite(lufs) or not -30 <= lufs <= -5:
@@ -335,24 +332,28 @@ def gui(cfg):
     except ImportError as exc:
         raise RuntimeError('Tkinter fehlt; README beachten oder Terminal-Modus verwenden.') from exc
     root = tk.Tk()
-    root.title('WAV Upload · Spreaker & Worship / Drive')
-    root.geometry('880x690')
-    root.minsize(680, 580)
+    root.title('LWMC NBG Uploader · v' + VERSION)
+    root.geometry('930x750')
+    root.minsize(880, 700)
     frame = ttk.Frame(root, padding=15)
     frame.pack(fill='both', expand=True)
-    ttk.Label(frame, text='WAV → MP3 → Upload', font=('', 19, 'bold')).pack(anchor='w')
-    ttk.Label(frame, text='Separate Dateien je Ziel auswählen. Titel = Dateiname ohne .wav.').pack(anchor='w', pady=(4, 12))
+    ttk.Label(frame, text='Audio schneiden → MP3 → Upload', font=('', 19, 'bold')).pack(anchor='w')
+    ttk.Label(frame, text='WAV / MP3 direkt auswählen oder die Aufnahme im Audio-Editor in Teile aufteilen.').pack(anchor='w', pady=(4, 12))
     files = {'spreaker': [], 'drive': []}
+    route_lists = {}
     buttons = []
+    editor_bar = ttk.Frame(frame)
+    editor_bar.pack(fill='x', pady=(0, 8))
     for route, heading in [('spreaker', 'Spreaker · immer normalisieren'), ('drive', 'Worship → Google Drive')]:
         group = ttk.LabelFrame(frame, text=heading, padding=8)
         group.pack(fill='x', pady=4)
         listing = tk.Listbox(group, height=4)
+        route_lists[route] = listing
         listing.pack(side='left', fill='both', expand=True)
         controls = ttk.Frame(group)
         controls.pack(side='right', padx=(10, 0))
         def add(r=route, box=listing):
-            selected = filedialog.askopenfilenames(title='WAV-Dateien auswählen', filetypes=[('WAV Audio', '*.wav *.WAV')])
+            selected = filedialog.askopenfilenames(title='Audiodateien auswählen', filetypes=[('WAV / MP3', '*.wav *.WAV *.mp3 *.MP3')])
             for path in selected:
                 if path not in files[r]:
                     files[r].append(path)
@@ -360,10 +361,28 @@ def gui(cfg):
         def clear(r=route, box=listing):
             files[r].clear()
             box.delete(0, 'end')
-        for label, command in [('WAV auswählen', add), ('Liste leeren', clear)]:
+        for label, command in [('Audio auswählen', add), ('Liste leeren', clear)]:
             b = ttk.Button(controls, text=label, command=command)
             b.pack(fill='x', pady=2)
             buttons.append(b)
+    def receive_clips(result):
+        for route, path in result:
+            destinations = ('spreaker', 'drive') if route == 'both' else (route,)
+            for destination in destinations:
+                if path not in files[destination]:
+                    files[destination].append(path)
+                    route_lists[destination].insert('end', Path(path).name)
+        events.put(('log', f'{len(result)} geschnittene Teile in die Upload-Listen übernommen.'))
+    def open_editor():
+        from audio_editor import AudioEditor
+        AudioEditor(root, STATE / 'edits', receive_clips)
+    editor_button = ttk.Button(editor_bar, text='Aufnahme schneiden / teilen', command=open_editor)
+    editor_button.pack(side='left')
+    buttons.append(editor_button)
+    update_label = tk.StringVar(value='Version ' + VERSION)
+    ttk.Label(editor_bar, textvariable=update_label).pack(side='right', padx=8)
+    update_button = ttk.Button(editor_bar, text='Nach Updates suchen', command=lambda: start_update_check(True))
+    update_button.pack(side='right')
     norm, parallel, public, dry = tk.BooleanVar(), tk.BooleanVar(value=True), tk.BooleanVar(), tk.BooleanVar()
     for text, var in [('Worship normalisieren', norm), ('Beide Wege parallel ausführen', parallel),
                       ('Spreaker öffentlich veröffentlichen (sonst privat)', public), ('Nur MP3 erzeugen, ohne Upload', dry)]:
@@ -394,37 +413,70 @@ def gui(cfg):
         ttk.Button(form, text='Google JSON auswählen', command=choose_credentials).grid(row=6, column=1, sticky='w')
         full = tk.BooleanVar(value=cfg['drive'].get('full_access', False))
         ttk.Checkbutton(form, text='Drive-Vollzugriff für vorhandenen Ordner (erneute Anmeldung nötig)', variable=full).grid(row=7, column=0, columnspan=2, pady=8)
+        auto_updates = tk.BooleanVar(value=cfg['updates'].get('check_on_start', True))
+        ttk.Checkbutton(form, text='Beim Start automatisch auf GitHub-Updates prüfen (max. täglich)', variable=auto_updates).grid(row=8, column=0, columnspan=2, pady=8)
         def save():
             for (section, key), value in values.items():
                 cfg[section][key] = value.get().strip()
             cfg['drive']['full_access'] = full.get()
+            cfg['updates']['check_on_start'] = auto_updates.get()
             save_json(CONFIG_PATH, cfg)
             popup.destroy()
-        ttk.Button(form, text='Speichern', command=save).grid(row=8, column=1, sticky='e')
+        ttk.Button(form, text='Speichern', command=save).grid(row=9, column=1, sticky='e')
     settings_button = ttk.Button(account_bar, text='Einstellungen', command=settings)
     settings_button.pack(side='left')
     buttons.append(settings_button)
+    def show_help():
+        from setup_help import show_setup_help
+        show_setup_help(root)
+    help_button = ttk.Button(account_bar, text='Einrichtungshilfe', command=show_help)
+    help_button.pack(side='left', padx=6)
+    # Help and cancellation remain usable during OAuth waiting.
+    login_cancel = threading.Event()
+    login_active = False
+    login_generation = 0
+    def cancel_login():
+        nonlocal busy, login_active, login_generation
+        login_cancel.set()
+        login_generation += 1
+        busy = False
+        login_active = False
+        cancel_button.configure(state='disabled')
+        for b in buttons:
+            b.configure(state='normal')
+        start_button.configure(state='normal')
+        events.put(('log', 'Anmeldung abgebrochen. Du kannst sie erneut starten.'))
+    cancel_button = ttk.Button(account_bar, text='Anmeldung abbrechen', command=cancel_login, state='disabled')
+    cancel_button.pack(side='right')
     def login(route):
-        nonlocal busy
+        nonlocal busy, login_active, login_cancel, login_generation
         if route == 'spreaker' and not (cfg['spreaker'].get('client_id') and cfg['spreaker'].get('client_secret')):
             messagebox.showinfo('Einstellungen', 'Bitte zuerst Client-ID und Client-Secret in den Einstellungen eintragen.')
             return
         busy = True
+        login_active = True
+        login_cancel = threading.Event()
+        cancellation = login_cancel
+        login_generation += 1
+        generation = login_generation
+        def report(kind, value=None):
+            events.put(('login_event', (generation, kind, value)))
+        cancel_button.configure(state='normal')
         for b in buttons:
             b.configure(state='disabled')
         start_button.configure(state='disabled')
         def work():
             try:
-                events.put(('log', 'Anmeldung im Browser öffnen …'))
+                report('log', 'Anmeldung im Browser öffnen … Bei 403 oder geschlossenem Tab: Anmeldung abbrechen.')
                 if route == 'spreaker':
-                    login_spreaker(cfg)
+                    login_spreaker(cfg, cancel=cancellation)
                 else:
-                    drive_service(cfg, login=True)
-                events.put(('log', route + ': Anmeldung erfolgreich.'))
+                    drive_service(cfg, login=True, cancel=cancellation)
+                report('log', route + ': Anmeldung erfolgreich.')
             except Exception as exc:
-                events.put(('log', 'Anmeldung fehlgeschlagen: ' + str(exc)))
+                report('log', 'Anmeldung: ' + str(exc))
             finally:
-                events.put(('done', None))
+                report('done')
         threading.Thread(target=work, daemon=True).start()
     for route, text in [('spreaker', 'Spreaker anmelden'), ('drive', 'Drive anmelden')]:
         button = ttk.Button(account_bar, text=text, command=lambda r=route: login(r))
@@ -438,7 +490,7 @@ def gui(cfg):
         nonlocal busy
         sp, dr = files['spreaker'][:], files['drive'][:]
         if not sp and not dr:
-            messagebox.showinfo('Dateien fehlen', 'Bitte mindestens eine WAV-Datei auswählen.')
+            messagebox.showinfo('Dateien fehlen', 'Bitte mindestens eine WAV- oder MP3-Datei auswählen.')
             return
         busy = True
         for b in buttons:
@@ -456,15 +508,63 @@ def gui(cfg):
         threading.Thread(target=work, daemon=True).start()
     start_button = ttk.Button(frame, text='Konvertierung / Upload starten', command=start)
     start_button.pack(fill='x')
+    def start_update_check(manual=False):
+        if not manual and not cfg['updates'].get('check_on_start', True):
+            return
+        last = read_json(STATE / 'update_check.json').get('last_check', 0)
+        if not manual and time.time() - last < 86400:
+            return
+        update_button.configure(state='disabled')
+        update_label.set('Version prüfen …')
+        def work():
+            try:
+                from updates import check_update
+                release = check_update()
+                save_json(STATE / 'update_check.json', {'last_check': time.time()})
+                events.put(('update', (release, manual, None)))
+            except Exception as exc:
+                events.put(('update', (None, manual, str(exc))))
+        threading.Thread(target=work, daemon=True).start()
+    def show_update(release):
+        popup = tk.Toplevel(root)
+        popup.title('Neue Version verfügbar')
+        content = ttk.Frame(popup, padding=18)
+        content.pack(fill='both', expand=True)
+        ttk.Label(content, text=f"Neue Version {release['version']} verfügbar", font=('', 14, 'bold')).pack(anchor='w')
+        ttk.Label(content, text='Download entpacken und die neue Anwendung starten.\nDeine Anmeldung und Einstellungen bleiben im Benutzerverzeichnis erhalten.').pack(anchor='w', pady=12)
+        if release.get('download_url'):
+            ttk.Button(content, text='Passenden Download öffnen', command=lambda: webbrowser.open(release['download_url'])).pack(fill='x', pady=3)
+        ttk.Button(content, text='Release / Änderungen öffnen', command=lambda: webbrowser.open(release['url'])).pack(fill='x', pady=3)
+        ttk.Button(content, text='Später', command=popup.destroy).pack(fill='x', pady=3)
     def poll():
-        nonlocal busy
+        nonlocal busy, login_active
         while True:
             try:
                 kind, value = events.get_nowait()
             except queue.Empty:
                 break
-            if kind == 'done':
+            if kind == 'login_event':
+                generation, kind, value = value
+                if generation != login_generation:
+                    continue
+            if kind == 'update':
+                release, manual, error = value
+                update_button.configure(state='normal')
+                if error:
+                    update_label.set('Update-Prüfung nicht erreichbar')
+                    if manual:
+                        messagebox.showinfo('Updates', 'GitHub konnte nicht erreicht werden. Internetverbindung prüfen.\n' + error)
+                elif release:
+                    update_label.set(release['version'] + ' verfügbar')
+                    show_update(release)
+                else:
+                    update_label.set('Version ' + VERSION + ' ist aktuell')
+                    if manual:
+                        messagebox.showinfo('Updates', 'Du verwendest die aktuelle stabile Version.')
+            elif kind == 'done':
                 busy = False
+                login_active = False
+                cancel_button.configure(state='disabled')
                 for b in buttons:
                     b.configure(state='normal')
                 start_button.configure(state='normal')
@@ -475,18 +575,24 @@ def gui(cfg):
                 logs.configure(state='disabled')
         root.after(100, poll)
     def close():
-        if busy:
+        if login_active:
+            login_cancel.set()
+            root.destroy()
+        elif busy:
             messagebox.showinfo('Upload läuft', 'Bitte den laufenden Vorgang abschließen lassen.')
         else:
             root.destroy()
     root.protocol('WM_DELETE_WINDOW', close)
     poll()
+    root.after(1500, start_update_check)
     root.mainloop()
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version', action='version', version=VERSION)
     sub = parser.add_subparsers(dest='command')
+    sub.add_parser('check-update')
     sub.add_parser('gui')
     sp = sub.add_parser('login-spreaker')
     sp.add_argument('--manual', action='store_true', help='Weiterleitungs-URL manuell einfügen')
@@ -494,8 +600,8 @@ def main():
     dr.add_argument('--port', type=int, default=0)
     dr.add_argument('--no-browser', action='store_true', help='Für SSH mit lokalem Port-Forwarding')
     upload = sub.add_parser('upload')
-    upload.add_argument('--spreaker', nargs='+', default=[], metavar='WAV')
-    upload.add_argument('--drive', nargs='+', default=[], metavar='WAV')
+    upload.add_argument('--spreaker', nargs='+', default=[], metavar='AUDIO')
+    upload.add_argument('--drive', nargs='+', default=[], metavar='AUDIO')
     upload.add_argument('--normalize-drive', action='store_true')
     upload.add_argument('--sequential', action='store_true')
     upload.add_argument('--public', action='store_true', help='Spreaker öffentlich veröffentlichen')
@@ -508,7 +614,11 @@ def main():
         if not cfg['spreaker'].get(key) and saved.get(key):
             cfg['spreaker'][key] = saved[key]
     try:
-        if args.command == 'login-spreaker':
+        if args.command == 'check-update':
+            from updates import check_update
+            release = check_update()
+            print(json.dumps(release, ensure_ascii=False, indent=2) if release else 'Aktuell: ' + VERSION)
+        elif args.command == 'login-spreaker':
             login_spreaker(cfg, args.manual)
         elif args.command == 'login-drive':
             drive_service(cfg, login=True, port=args.port, no_browser=args.no_browser)
@@ -523,7 +633,15 @@ def main():
         print('\nAbgebrochen. Bei begonnenem Upload zuerst Zielkonto prüfen.', file=sys.stderr)
         return 130
     except Exception as exc:
-        print('FEHLER: ' + str(exc), file=sys.stderr)
+        if FROZEN and sys.stderr is None:
+            import tkinter as tk
+            from tkinter import messagebox
+            error_root = tk.Tk()
+            error_root.withdraw()
+            messagebox.showerror('LWMC NBG Uploader', str(exc))
+            error_root.destroy()
+        else:
+            print('FEHLER: ' + str(exc), file=sys.stderr)
         return 1
 
 
