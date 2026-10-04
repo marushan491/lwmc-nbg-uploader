@@ -1,0 +1,19 @@
+{
+  "spreaker": {
+    "client_id": "",
+    "client_secret": "",
+    "redirect_uri": "http://127.0.0.1:8765/callback",
+    "show_id": "",
+    "description": ""
+  },
+  "drive": {
+    "credentials_file": "google_credentials.json",
+    "folder_id": "",
+    "full_access": false
+  },
+  "audio": {
+    "bitrate_kbps": 192,
+    "target_lufs": -16,
+    "output_dir": "output"
+  }
+}
