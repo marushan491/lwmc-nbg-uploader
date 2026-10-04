@@ -8,7 +8,10 @@ from update_core import clean_environment
 
 
 def create_root():
-    return TkinterDnD.Tk()
+    try:
+        return TkinterDnD.Tk()
+    except RuntimeError as exc:
+        raise RuntimeError('Drag-and-drop konnte nicht geladen werden: ' + str(exc.__context__ or exc)) from exc
 
 
 def audio_paths(paths):

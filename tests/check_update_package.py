@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory() as d:
     target, relative, helper = installation(exe, label)
     native_folder = {'Windows-x64': 'win-x64', 'Linux-x64': 'linux-x64',
                      'macOS-Intel': 'osx-x64', 'macOS-AppleSilicon': 'osx-arm64'}[label]
-    assert any(p.is_dir() for p in target.rglob(native_folder)), 'Missing native drag-and-drop library'
+    assert any(p.is_dir() for p in target.rglob(native_folder+'*')), 'Missing native drag-and-drop library'
     info_path = target/'Contents/Resources/update-manifest.json' if label.startswith('macOS') else target/'update-manifest.json'
     assert json.loads(info_path.read_text()) == {'version': VERSION, 'platform': label}
     subprocess.run([str(exe), '--version'], check=True, timeout=60)
@@ -40,7 +40,9 @@ with tempfile.TemporaryDirectory() as d:
         original_ready = bootstrap / 'ready.json'
         env = clean_environment()
         env['LWMC_UPDATE_READY'] = str(original_ready)
-        old = subprocess.Popen([str(exe)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        startup_log = destination / 'startup.log'
+        output_log = startup_log.open('w')
+        old = subprocess.Popen([str(exe)], env=env, stdout=output_log, stderr=output_log)
         restarted_pid = None
         installer = None
         def await_file(path, timeout=60):
@@ -48,10 +50,12 @@ with tempfile.TemporaryDirectory() as d:
             while time.monotonic() < deadline:
                 if path.exists():
                     return
+                if path == original_ready and old.poll() is not None:
+                    raise RuntimeError('Application failed to start: ' + startup_log.read_text(errors='replace'))
                 for error_path in destination.glob('.lwmc-update-*/error.json'):
                     raise RuntimeError(error_path.read_text())
                 time.sleep(.2)
-            raise RuntimeError('Missing update acknowledgement: ' + str(path))
+            raise RuntimeError('Missing update acknowledgement: ' + str(path) + '\n' + startup_log.read_text(errors='replace'))
         try:
             await_file(original_ready)
             release = {'version': 'v' + VERSION, 'platform': label}
@@ -90,3 +94,4 @@ with tempfile.TemporaryDirectory() as d:
             if installer and installer.poll() is None:
                 installer.terminate()
                 installer.wait(timeout=10)
+            output_log.close()
