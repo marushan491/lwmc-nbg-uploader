@@ -23,7 +23,9 @@ with tempfile.TemporaryDirectory() as d:
     target, relative, helper = installation(exe, label)
     native_folder = {'Windows-x64': 'win-x64', 'Linux-x64': 'linux-x64',
                      'macOS-Intel': 'osx-x64', 'macOS-AppleSilicon': 'osx-arm64'}[label]
-    assert any(p.is_dir() for p in target.rglob(native_folder+'*')), 'Missing native drag-and-drop library'
+    native_dirs = [p for p in target.rglob(native_folder+'*') if p.is_dir()]
+    assert native_dirs, 'Missing native drag-and-drop library directory'
+    assert any(p.suffix in ('.so', '.dll', '.dylib') for folder in native_dirs for p in folder.iterdir()), 'Missing native drag-and-drop binary'
     info_path = target/'Contents/Resources/update-manifest.json' if label.startswith('macOS') else target/'update-manifest.json'
     assert json.loads(info_path.read_text()) == {'version': VERSION, 'platform': label}
     subprocess.run([str(exe), '--version'], check=True, timeout=60)
