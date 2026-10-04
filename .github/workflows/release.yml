@@ -77,7 +77,7 @@ jobs:
             python -m unittest discover -s tests -v
           fi
       - name: Bundle desktop app
-        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name WorshipUploader --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all google.auth --collect-all requests_toolbelt audio_uploader.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name WorshipUploader --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all google.auth --collect-all requests_toolbelt --additional-hooks-dir=. audio_uploader.py
       - name: Bundle independent update helper
         run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name update-helper update_helper.py
       - name: Smoke test executable
@@ -138,4 +138,4 @@ jobs:
             gh release upload "$TAG" downloads/*.zip --clobber
             exit 0
           fi
-          gh release create "$TAG" downloads/*.zip --target "$COMMIT_SHA" --title "Worship Audio Uploader $TAG" --notes 'Neu: Jetzt aktualisieren und neu starten lädt das passende GitHub-Paket, prüft SHA-256, ersetzt die App und startet sie neu. Bei fehlgeschlagenem Start wird die alte Version wiederhergestellt. Anmeldung, Einstellungen und eigene Dateien bleiben erhalten. Diese Version einmalig installieren, danach sind Updates direkt in der App möglich. Windows, Linux und beide Macs; FFmpeg separat erforderlich.'
+          gh release create "$TAG" downloads/*.zip --target "$COMMIT_SHA" --title "Worship Audio Uploader $TAG" --notes 'Neu: WAV/MP3 per Drag-and-drop in Predigt-/Worship-Listen und Audio-Editor. Titelvorschau mit Aufnahmedatum, LWMC Nürnberg, Sprecher und Teilnummer; individuelle Titel per Doppelklick. Lesbare MP3-Dateinamen ohne Hash, vorhandene Dateien bleiben erhalten. Ausgabeordner direkt öffnen; Sprecher und Zielordner werden gespeichert. Auto-Update weiterhin per Jetzt aktualisieren und neu starten. Windows, Linux und beide Macs; FFmpeg separat erforderlich.'

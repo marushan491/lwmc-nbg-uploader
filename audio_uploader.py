@@ -22,6 +22,8 @@ import urllib.parse
 import webbrowser
 from app_version import VERSION
 from audio_paths import find_tool
+from audio_names import recording_titles, reserve_output
+from desktop_ui import create_root, register_drop, audio_paths as accept_audio_paths, open_folder
 
 FROZEN = getattr(sys, 'frozen', False)
 BASE = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -256,7 +258,7 @@ def fingerprint(source, options):
 
 
 def run_jobs(cfg, sp_files, drive_files, normalize_drive=False, parallel=True,
-             public=False, convert_only=False, force=False, log=print):
+             public=False, convert_only=False, force=False, log=print, titles=None):
     if not find_tool('ffmpeg'):
         raise RuntimeError('FFmpeg fehlt. Siehe README.')
     all_files = [Path(p).expanduser().resolve() for p in [*sp_files, *drive_files]]
@@ -290,22 +292,26 @@ def run_jobs(cfg, sp_files, drive_files, normalize_drive=False, parallel=True,
         route, source, norm = job
         prefix = f'[{route} / {source.name}] '
         emit = lambda message: log(prefix + message)
+        target = None
         try:
+            title = (titles or {}).get(route, {}).get(str(source), source.stem).strip()
+            if not title:
+                raise ValueError('Der Titel darf nicht leer sein.')
             options = {'route': route, 'normalize': norm, 'bitrate': bitrate, 'lufs': lufs,
-                'title': source.stem, 'public': public if route == 'spreaker' else False,
+                'title': title, 'public': public if route == 'spreaker' else False,
                 'destination': str(cfg['spreaker'].get('show_id')) if route == 'spreaker' else folder,
                 'description': cfg['spreaker'].get('description', '') if route == 'spreaker' else ''}
             key = fingerprint(source, options)
             if not convert_only and not force and key in successes:
                 emit('Bereits erfolgreich hochgeladen – übersprungen.')
                 return True
-            target = output / route / f'{source.stem}-{key[:12]}.mp3'
+            target = reserve_output(output / route, title)
             convert(source, target, norm, bitrate, lufs, emit)
             if convert_only:
                 emit('Fertig: ' + str(target))
                 return True
             emit('Upload startet …')
-            result = upload_spreaker(target, source.stem, cfg, token, public) if route == 'spreaker' else upload_drive(target, source.stem, service, folder, emit)
+            result = upload_spreaker(target, title, cfg, token, public) if route == 'spreaker' else upload_drive(target, title, service, folder, emit)
             with LOCK:
                 successes[key] = {'source': str(source), 'mp3': str(target), 'options': options, 'result': result,
                                   'uploaded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
@@ -315,6 +321,8 @@ def run_jobs(cfg, sp_files, drive_files, normalize_drive=False, parallel=True,
                 emit('Spreaker verarbeitet die Audiodatei anschließend serverseitig.')
             return True
         except Exception as exc:
+            if target and target.exists() and target.stat().st_size == 0:
+                target.unlink()
             emit('FEHLER: ' + str(exc))
             return False
     # One worker per route: Google clients are not thread safe; files on each route remain sequential.
@@ -328,10 +336,10 @@ def run_jobs(cfg, sp_files, drive_files, normalize_drive=False, parallel=True,
 def gui(cfg):
     try:
         import tkinter as tk
-        from tkinter import filedialog, messagebox, ttk
+        from tkinter import filedialog, messagebox, simpledialog, ttk
     except ImportError as exc:
         raise RuntimeError('Tkinter fehlt; README beachten oder Terminal-Modus verwenden.') from exc
-    root = tk.Tk()
+    root = create_root()
     root.title('LWMC NBG Uploader · v' + VERSION)
     root.geometry('960x780')
     root.minsize(900, 760)
@@ -348,15 +356,71 @@ def gui(cfg):
               foreground=[('disabled', '#64748b'), ('active', 'white')])
     style.configure('TLabelframe', padding=12)
     style.configure('TLabelframe.Label', font=('', 11, 'bold'))
-    frame = ttk.Frame(root, padding=22)
+    frame = ttk.Frame(root, padding=16)
     frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='Deine Aufnahme. Fertig als MP3.', style='Title.TLabel').pack(anchor='w')
-    ttk.Label(frame, text='Dateien auswählen, bei Bedarf schneiden und anschließend speichern oder hochladen.', style='Muted.TLabel').pack(anchor='w', pady=(4, 16))
+    ttk.Label(frame, text='WAV / MP3 hineinziehen, bei Bedarf schneiden und anschließend speichern oder hochladen.', style='Muted.TLabel').pack(anchor='w', pady=(4, 10))
     files = {'spreaker': [], 'drive': []}
     route_lists = {}
     buttons = []
+    custom_titles = {'spreaker': {}, 'drive': {}}
+    naming = cfg.get('naming', {})
+    use_names = tk.BooleanVar(value=naming.get('use_template', True))
+    from datetime import date
+    recording_date = tk.StringVar(value=date.today().strftime('%d.%m.%Y'))
+    speaker = tk.StringVar(value=naming.get('speaker', ''))
+    def job_titles():
+        return {route: {**(recording_titles(paths, route, recording_date.get(), speaker.get()) if use_names.get() else
+                           {p: Path(p).stem for p in paths}), **custom_titles[route]}
+                for route, paths in files.items()}
+    def refresh_titles(*_):
+        try:
+            titles = job_titles()
+        except ValueError:
+            titles = {r: {p: custom_titles[r].get(p, Path(p).stem) for p in paths} for r, paths in files.items()}
+        for route, listing in route_lists.items():
+            selected = listing.curselection()
+            listing.delete(0, 'end')
+            for path in files[route]:
+                listing.insert('end', titles[route][path])
+            for index in selected:
+                if index < len(files[route]):
+                    listing.selection_set(index)
+    def add_paths(route, selected):
+        accepted, rejected = accept_audio_paths(selected)
+        for path in accepted:
+            if path not in files[route]:
+                files[route].append(path)
+        refresh_titles()
+        if rejected:
+            messagebox.showinfo('WAV / MP3 auswählen', f'{len(rejected)} Einträge ignoriert. Bitte vorhandene WAV- oder MP3-Dateien hineinziehen.', parent=root)
+    def rename_selected(route):
+        selected = route_lists[route].curselection()
+        if not selected:
+            messagebox.showinfo('Titel ändern', 'Zuerst eine Datei in der Liste markieren.', parent=root)
+            return
+        path = files[route][selected[0]]
+        try:
+            current = job_titles()[route][path]
+        except ValueError:
+            current = custom_titles[route].get(path, Path(path).stem)
+        title = simpledialog.askstring('Titel ändern', 'Titel für diese Datei (Original bleibt unverändert):', initialvalue=current, parent=root)
+        if title is not None and title.strip():
+            custom_titles[route][path] = title.strip()
+            refresh_titles()
     editor_bar = ttk.Frame(frame)
     editor_bar.pack(fill='x', pady=(0, 8))
+    name_bar = ttk.Frame(frame)
+    name_bar.pack(fill='x', pady=(0, 10))
+    name_choice = ttk.Checkbutton(name_bar, text='Titel wie im Podcast', variable=use_names, command=refresh_titles)
+    name_choice.pack(side='left', padx=(0, 12))
+    buttons.append(name_choice)
+    for label, var, width in [('Aufnahmedatum', recording_date, 12), ('Sprecher', speaker, 24)]:
+        ttk.Label(name_bar, text=label).pack(side='left')
+        entry = ttk.Entry(name_bar, textvariable=var, width=width)
+        entry.pack(side='left', padx=(6, 12))
+        buttons.append(entry)
+        var.trace_add('write', refresh_titles)
     route_area = ttk.Frame(frame)
     route_area.pack(fill='x')
     route_area.columnconfigure((0, 1), weight=1, uniform='routes')
@@ -364,33 +428,41 @@ def gui(cfg):
         group = ttk.LabelFrame(route_area, text=heading, padding=12)
         group.grid(row=0, column=column, sticky='nsew', padx=(0, 8) if column == 0 else (8, 0))
         ttk.Label(group, text='Lautstärke wird immer normalisiert.' if route == 'spreaker' else 'Normalisierung kannst du unten einschalten.', style='Muted.TLabel').pack(anchor='w', pady=(0, 8))
-        listing = tk.Listbox(group, height=5, background='white', foreground='#202d42',
+        listing = tk.Listbox(group, height=3, background='white', foreground='#202d42',
                              selectbackground='#275bcb', relief='flat', highlightthickness=1,
                              highlightbackground='#d8dfe9', activestyle='none')
         route_lists[route] = listing
         listing.pack(fill='both', expand=True)
+        horizontal = ttk.Scrollbar(group, orient='horizontal', command=listing.xview)
+        horizontal.pack(fill='x')
+        listing.configure(xscrollcommand=horizontal.set)
+        register_drop(listing, lambda paths, r=route: add_paths(r, paths), busy=lambda: busy)
+        register_drop(group, lambda paths, r=route: add_paths(r, paths), busy=lambda: busy)
+        listing.bind('<Double-Button-1>', lambda _, r=route: rename_selected(r) if not busy else None)
+        ttk.Label(group, text='WAV / MP3 hier hineinziehen · Doppelklick ändert den Titel', style='Muted.TLabel').pack(anchor='w', pady=(5, 0))
         controls = ttk.Frame(group)
         controls.pack(fill='x', pady=(8, 0))
         def add(r=route, box=listing):
             selected = filedialog.askopenfilenames(title='Audiodateien auswählen', filetypes=[('WAV / MP3', '*.wav *.WAV *.mp3 *.MP3')])
-            for path in selected:
-                if path not in files[r]:
-                    files[r].append(path)
-                    box.insert('end', Path(path).name)
+            add_paths(r, selected)
         def clear(r=route, box=listing):
             files[r].clear()
+            custom_titles[r].clear()
             box.delete(0, 'end')
         for label, command in [('Dateien hinzufügen', add), ('Liste leeren', clear)]:
             b = ttk.Button(controls, text=label, command=command)
             b.pack(side='left', padx=(0, 6))
             buttons.append(b)
+        title_button = ttk.Button(controls, text='Titel ändern', command=lambda r=route: rename_selected(r))
+        title_button.pack(side='left')
+        buttons.append(title_button)
     def receive_clips(result):
         for route, path in result:
             destinations = ('spreaker', 'drive') if route == 'both' else (route,)
             for destination in destinations:
                 if path not in files[destination]:
-                    files[destination].append(path)
-                    route_lists[destination].insert('end', Path(path).name)
+                    files[destination].append(str(Path(path).resolve()))
+        refresh_titles()
         events.put(('log', f'{len(result)} geschnittene Teile in die Dateilisten übernommen.'))
     def open_editor():
         from audio_editor import AudioEditor
@@ -540,19 +612,32 @@ def gui(cfg):
         if not sp and not dr:
             messagebox.showinfo('Dateien fehlen', 'Bitte mindestens eine WAV- oder MP3-Datei auswählen.')
             return
+        try:
+            titles = job_titles()
+        except ValueError:
+            messagebox.showinfo('Aufnahmedatum prüfen', 'Bitte ein gültiges Aufnahmedatum im Format TT.MM.JJJJ eintragen.', parent=root)
+            return
         export = mode.get() == 'export'
         job_cfg = json.loads(json.dumps(cfg))
         destination = filedialog.askdirectory(parent=root, title='Ordner zum Speichern der MP3-Dateien wählen', mustexist=True)
         if not destination:
             return
         job_cfg['audio']['output_dir'] = destination
+        last_output.set(destination)
+        open_output_button.configure(state='normal')
+        cfg['audio']['output_dir'] = destination
+        cfg['naming'] = {'use_template': use_names.get(), 'speaker': speaker.get().strip()}
+        try:
+            save_json(CONFIG_PATH, cfg)
+        except OSError:
+            events.put(('log', 'Der Zielordner wird für diese Sitzung verwendet; Einstellungen konnten nicht gespeichert werden.'))
         busy = True
         for b in buttons:
             b.configure(state='disabled')
         start_button.configure(state='disabled')
         status.set('MP3-Dateien werden gespeichert …' if export else 'MP3-Dateien werden gespeichert und hochgeladen …')
         progress.start(12)
-        options = dict(normalize_drive=norm.get(), parallel=parallel.get(), public=public.get(), convert_only=export)
+        options = dict(normalize_drive=norm.get(), parallel=parallel.get(), public=public.get(), convert_only=export, titles=titles)
         def work():
             try:
                 ok = run_jobs(job_cfg, sp, dr, log=lambda x: events.put(('log', x)), **options)
@@ -567,7 +652,16 @@ def gui(cfg):
         threading.Thread(target=work, daemon=True).start()
     start_button = ttk.Button(action_bar, text='MP3 speichern', style='Primary.TButton', command=start)
     start_button.pack(side='right')
-    ttk.Label(action_bar, text='Der Zielordner wird beim Start ausgewählt.', style='Muted.TLabel').pack(side='left')
+    last_output = tk.StringVar(value=cfg['audio'].get('output_dir', ''))
+    def open_output():
+        try:
+            open_folder(last_output.get())
+        except (OSError, RuntimeError) as exc:
+            messagebox.showerror('Ausgabeordner', str(exc), parent=root)
+    open_output_button = ttk.Button(action_bar, text='Ausgabeordner öffnen', command=open_output,
+                                   state='normal' if last_output.get() and Path(last_output.get()).expanduser().is_dir() else 'disabled')
+    open_output_button.pack(side='left')
+    ttk.Label(action_bar, text='Zielordner beim Start wählen', style='Muted.TLabel').pack(side='left', padx=10)
     def refresh_mode():
         upload = mode.get() == 'upload'
         start_button.configure(text='Speichern und hochladen' if upload else 'MP3 speichern')

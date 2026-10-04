@@ -21,6 +21,9 @@ with tempfile.TemporaryDirectory() as d:
     exe = (package / 'WorshipUploader.app/Contents/MacOS/WorshipUploader' if label.startswith('macOS') else
            package / ('WorshipUploader.exe' if label.startswith('Windows') else 'WorshipUploader'))
     target, relative, helper = installation(exe, label)
+    native_folder = {'Windows-x64': 'win-x64', 'Linux-x64': 'linux-x64',
+                     'macOS-Intel': 'osx-x64', 'macOS-AppleSilicon': 'osx-arm64'}[label]
+    assert any(p.is_dir() for p in target.rglob(native_folder)), 'Missing native drag-and-drop library'
     info_path = target/'Contents/Resources/update-manifest.json' if label.startswith('macOS') else target/'update-manifest.json'
     assert json.loads(info_path.read_text()) == {'version': VERSION, 'platform': label}
     subprocess.run([str(exe), '--version'], check=True, timeout=60)

@@ -27,11 +27,13 @@ def button(root, label):
 class GuiTests(unittest.TestCase):
     def setUp(self):
         try:
-            self.root = tk.Tk()
+            self.root = app.create_root()
         except tk.TclError as exc:
             self.skipTest('No graphical session: ' + str(exc))
         self.root.withdraw()
         self.temp = tempfile.TemporaryDirectory()
+        self.cfg_patch = patch.object(app, 'CONFIG_PATH', Path(self.temp.name) / 'config.json')
+        self.cfg_patch.start()
     def tearDown(self):
         if hasattr(self, 'root'):
             for job in self.root.tk.call('after', 'info'):
@@ -43,6 +45,7 @@ class GuiTests(unittest.TestCase):
             # before subsequent audio worker threads can trigger cyclic GC.
             gc.collect()
         if hasattr(self, 'temp'):
+            self.cfg_patch.stop()
             self.temp.cleanup()
     def test_editor_destinations_cut_and_undo(self):
         result = []
@@ -99,7 +102,7 @@ class GuiTests(unittest.TestCase):
             self.assertIn('disabled', button(self.root, 'Einstellungen').state())
             button(self.root, 'Anmeldung abbrechen').invoke()
             self.assertNotIn('disabled', button(self.root, 'Einstellungen').state())
-        with patch.object(tk, 'Tk', return_value=self.root), \
+        with patch.object(app, 'create_root', return_value=self.root), \
              patch.object(self.root, 'mainloop', side_effect=exercise), \
              patch.object(app, 'STATE', Path(self.temp.name)), \
              patch.object(app, 'login_spreaker', side_effect=login), \
@@ -114,6 +117,7 @@ class GuiTests(unittest.TestCase):
                                  and w.cget('style') == 'Primary.TButton']), 1)
             self.assertFalse(button(self.root, 'Drive anmelden').master.winfo_manager())
             source = str(Path(self.temp.name) / 'recording.wav')
+            Path(source).write_bytes(b'audio')
             with patch('tkinter.filedialog.askopenfilenames', return_value=[source]):
                 button(self.root, 'Dateien hinzufügen').invoke()
             button(self.root, 'MP3 speichern').invoke()
@@ -137,9 +141,57 @@ class GuiTests(unittest.TestCase):
         def process(*args, **kwargs):
             called.set()
             return True
-        with patch.object(tk, 'Tk', return_value=self.root), \
+        with patch.object(app, 'create_root', return_value=self.root), \
              patch.object(self.root, 'mainloop', side_effect=exercise), \
              patch.object(app, 'STATE', Path(self.temp.name)), \
              patch('tkinter.filedialog.askdirectory', return_value=self.temp.name), \
              patch.object(app, 'run_jobs', side_effect=process) as run:
             app.gui(cfg)
+
+    def test_naming_preview_custom_title_and_open_output(self):
+        cfg = {'spreaker': {}, 'drive': {}, 'audio': {}, 'updates': {'check_on_start': False}}
+        source = Path(self.temp.name) / 'Recording with spaces.wav'
+        source.write_bytes(b'audio')
+        called = threading.Event()
+        def process(*args, **kwargs):
+            called.set()
+            return True
+        def exercise():
+            speaker = next(w for w in widgets(self.root) if w.winfo_class() == 'TEntry' and int(w.cget('width')) == 24)
+            speaker.insert(0, 'Pas. Daniel')
+            with patch('tkinter.filedialog.askopenfilenames', return_value=[str(source)]):
+                button(self.root, 'Dateien hinzufügen').invoke()
+            listing = next(w for w in widgets(self.root) if w.winfo_class() == 'Listbox')
+            self.assertIn('LWMC Nürnberg – Pas. Daniel', listing.get(0))
+            listing.selection_set(0)
+            with patch('tkinter.simpledialog.askstring', return_value='Mein Predigttitel'):
+                button(self.root, 'Titel ändern').invoke()
+            self.assertEqual(listing.get(0), 'Mein Predigttitel')
+            button(self.root, 'MP3 speichern').invoke()
+            self.assertTrue(called.wait(1))
+            self.assertEqual(run.call_args.kwargs['titles']['spreaker'][str(source.resolve())], 'Mein Predigttitel')
+            button(self.root, 'Ausgabeordner öffnen').invoke()
+            opened.assert_called_once_with(self.temp.name)
+        with patch.object(app, 'create_root', return_value=self.root), \
+             patch.object(self.root, 'mainloop', side_effect=exercise), \
+             patch.object(app, 'STATE', Path(self.temp.name)), \
+             patch('tkinter.filedialog.askdirectory', return_value=self.temp.name), \
+             patch.object(app, 'open_folder') as opened, \
+             patch.object(app, 'run_jobs', side_effect=process) as run:
+            app.gui(cfg)
+
+    def test_native_drop_callback_handles_paths_and_busy_editor(self):
+        from desktop_ui import register_drop
+        from types import SimpleNamespace
+        listing = tk.Listbox(self.root)
+        paths = [str(Path(self.temp.name)/'a with spaces.wav'), str(Path(self.temp.name)/'b {brace}.mp3')]
+        result = []
+        drop = register_drop(listing, result.extend)
+        data = self.root.tk.call('format', '%s', self.root.tk.call('list', *paths))
+        self.assertEqual(drop(SimpleNamespace(data=data)), 'copy')
+        self.assertEqual(result, paths)
+        editor = AudioEditor(self.root, Path(self.temp.name), lambda _: None)
+        editor.busy = True
+        self.assertEqual(register_drop(editor.canvas, result.extend, busy=lambda: editor.busy)(SimpleNamespace(data=data)), 'refuse_drop')
+        editor.busy = False
+        editor.close()

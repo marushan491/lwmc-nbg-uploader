@@ -180,7 +180,10 @@ class AudioEditor:
         self.canvas = tk.Canvas(f, width=1000, height=160, bg='#111827', highlightthickness=0)
         self.canvas.pack(pady=(10, 2), anchor='w')
         self.canvas.bind('<Button-1>', self.click_wave)
-        self.info = tk.StringVar(value='Zuerst eine Aufnahme öffnen.')
+        from desktop_ui import register_drop
+        register_drop(self.canvas, self.load_files, busy=lambda: self.busy)
+        register_drop(self.source_box, self.load_files, busy=lambda: self.busy)
+        self.info = tk.StringVar(value='WAV / MP3 auf die Wellenform ziehen oder Aufnahme öffnen.')
         ttk.Label(f, textvariable=self.info).pack(anchor='w')
         times = ttk.Frame(f)
         times.pack(fill='x', pady=8)
@@ -268,6 +271,15 @@ class AudioEditor:
     def open_files(self):
         selected = self.dialog.askopenfilenames(parent=self.window, title='Aufnahmen öffnen',
                     filetypes=[('Audio', '*.wav *.WAV *.mp3 *.MP3')])
+        self.load_files(selected)
+
+    def load_files(self, selected):
+        if self.busy:
+            return
+        from desktop_ui import audio_paths
+        selected, rejected = audio_paths(selected)
+        if rejected:
+            self.messages.showinfo('WAV / MP3 auswählen', f'{len(rejected)} ungültige Einträge ignoriert.', parent=self.window)
         if not selected:
             return
         self.status.set('Aufnahme analysieren und Wellenform erzeugen …')

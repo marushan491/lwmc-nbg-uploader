@@ -75,6 +75,15 @@ class WorkflowTests(unittest.TestCase):
         first = app.fingerprint(self.a, {'route': 'drive'})
         self.a.write_bytes(b'different')
         self.assertNotEqual(first, app.fingerprint(self.a, {'route': 'drive'}))
+    def test_custom_upload_title_and_readable_export_filename(self):
+        title = '04.10.2026 – LWMC Nürnberg – Pas. Daniel'
+        titles = {'spreaker': {str(self.a.resolve()): title}}
+        with patch.object(app.shutil, 'which', return_value='/ffmpeg'), \
+             patch.object(app, 'convert'), patch.object(app, 'spreaker_token', return_value='TOKEN'), \
+             patch.object(app, 'upload_spreaker', return_value={'episode_id':1}) as upload:
+            self.assertTrue(app.run_jobs(self.cfg, [str(self.a)], [], titles=titles, log=lambda _: None))
+            self.assertEqual(upload.call_args.args[1], title)
+            self.assertEqual(upload.call_args.args[0].name, title+'.mp3')
     def test_invalid_source_before_auth(self):
         with patch.object(app.shutil, 'which', return_value='/ffmpeg'), patch.object(app, 'spreaker_token') as auth:
             with self.assertRaises(RuntimeError):
