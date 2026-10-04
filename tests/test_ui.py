@@ -34,7 +34,8 @@ class GuiTests(unittest.TestCase):
     def tearDown(self):
         if hasattr(self, 'root'):
             for job in self.root.tk.call('after', 'info'):
-                self.root.after_cancel(job)
+                # ttk progress timers are Tcl callbacks, not Python commands.
+                self.root.tk.call('after', 'cancel', job)
             self.root.destroy()
         if hasattr(self, 'temp'):
             self.temp.cleanup()

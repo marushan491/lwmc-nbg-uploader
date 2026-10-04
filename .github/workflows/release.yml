@@ -123,4 +123,4 @@ jobs:
             gh release upload "$TAG" downloads/*.zip --clobber
             exit 0
           fi
-          gh release create "$TAG" downloads/*.zip --target "$COMMIT_SHA" --title "Worship Audio Uploader $TAG" --notes 'Windows, Linux und macOS: ZIP entpacken und WorshipUploader starten. FFmpeg separat installieren; Anleitung liegt bei. Neu: WAV/MP3 schneiden, teilen, verbinden und Teile zuordnen; GitHub-Update-Meldung. Spreaker und Google Drive einmalig in den Einstellungen anmelden.'
+          gh release create "$TAG" downloads/*.zip --target "$COMMIT_SHA" --title "Worship Audio Uploader $TAG" --notes 'Windows, Linux und macOS: ZIP entpacken und WorshipUploader starten. FFmpeg separat installieren; Anleitung liegt bei. Neu: übersichtliche Dateibereiche und eine Hauptaktion. MP3 speichern funktioniert offline ohne Anmeldung. Für MP3 speichern und hochladen erscheinen die Kontooptionen. Außerdem: WAV/MP3 schneiden, teilen, verbinden, Teile zuordnen und GitHub-Update-Meldungen.'
