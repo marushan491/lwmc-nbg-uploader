@@ -729,12 +729,12 @@ def gui(cfg):
     poll()
     root.after(1500, start_update_check)
     from update_core import confirm_startup, cleanup_finished
-    confirm_startup(VERSION)
+    active_update = confirm_startup(VERSION)
     if FROZEN:
         try:
             from auto_update import installation
             target, _, _ = installation()
-            cleanup_finished(target)
+            cleanup_finished(target, active_update)
         except (OSError, RuntimeError):
             pass
     root.mainloop()

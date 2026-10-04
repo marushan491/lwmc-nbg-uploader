@@ -69,6 +69,16 @@ class InstallerTests(unittest.TestCase):
         update_core.cleanup_finished(self.target)
         self.assertFalse(self.work.exists())
         self.assertTrue(other.exists())
+    def test_current_update_work_is_kept_until_next_regular_start(self):
+        (self.work / 'finished.json').write_text('{}')
+        ready = self.work / 'ready.json'
+        with patch.dict(os.environ, {'LWMC_UPDATE_READY': str(ready)}):
+            active = update_core.confirm_startup('1.2.0')
+        update_core.cleanup_finished(self.target, active)
+        self.assertTrue(self.work.exists())
+        self.assertEqual(json.loads(ready.read_text())['version'], '1.2.0')
+        update_core.cleanup_finished(self.target)
+        self.assertFalse(self.work.exists())
 
 
 class PackageTests(unittest.TestCase):

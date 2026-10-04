@@ -149,12 +149,15 @@ def confirm_startup(version):
             temp = path.with_suffix('.tmp')
             temp.write_text(json.dumps({'version': version, 'pid': os.getpid()}), encoding='utf-8')
             temp.replace(path)
+            return path.parent
 
 
-def cleanup_finished(target):
+def cleanup_finished(target, active_work=None):
     """A previous Windows helper cannot delete its own executable while running."""
     target = Path(target).resolve()
     for work in target.parent.glob('.lwmc-update-*'):
+        if active_work and work.resolve() == Path(active_work).resolve():
+            continue
         if not work.is_dir() or work.is_symlink() or not (work / 'finished.json').is_file():
             continue
         try:
