@@ -55,6 +55,22 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(app.run_jobs(self.cfg, [str(self.a)], [str(self.b)], log=lambda _: None))
             self.assertEqual(dr.call_count, 1)
         self.assertEqual(len(app.read_json(app.STATE / 'successful_uploads.json')), 1)
+    def test_export_requires_no_login_or_show_id(self):
+        self.cfg['spreaker'] = {}
+        def convert(source, target, *args):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b'converted')
+        with patch.object(app.shutil, 'which', return_value='/ffmpeg'), \
+             patch.object(app, 'convert', side_effect=convert), \
+             patch.object(app, 'spreaker_token') as sp_auth, \
+             patch.object(app, 'drive_service') as drive_auth, \
+             patch.object(app, 'upload_spreaker') as sp_upload, \
+             patch.object(app, 'upload_drive') as drive_upload:
+            self.assertTrue(app.run_jobs(self.cfg, [str(self.a)], [str(self.b)], convert_only=True, log=lambda _: None))
+            for call in (sp_auth, drive_auth, sp_upload, drive_upload):
+                call.assert_not_called()
+        self.assertEqual(len(list((self.root / 'mp3').rglob('*.mp3'))), 2)
+
     def test_source_content_changes_fingerprint(self):
         first = app.fingerprint(self.a, {'route': 'drive'})
         self.a.write_bytes(b'different')

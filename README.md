@@ -87,6 +87,10 @@ Der Episodentitel und der Drive-Dateiname werden aus dem WAV-Dateinamen abgeleit
 
 Beispiel: Predigt 1 → Spreaker, Predigt 2 → Spreaker, Worship → Drive. Die Zwischen-WAVs liegen unter `~/.audio-uploader/edits`; sie beanspruchen deutlich mehr Platz als MP3. Normalisierung und abschließende MP3-Konvertierung erfolgen erst beim Upload. MP3-Eingaben werden decodiert; die Schnittfunktion verursacht keinen zusätzlichen MP3-Kodierungsschritt. An Schnittstellen können harte Übergänge auftreten; es werden keine automatischen Crossfades eingefügt.
 
+## MP3 exportieren ohne Anmeldung
+
+**MP3 exportieren – ohne Anmeldung** im Hauptfenster fragt nach einem Zielordner und speichert die ausgewählten oder geschnittenen Teile dort als MP3. Es erfolgt kein Upload und keine Spreaker-/Google-Anmeldung; auch Show-ID und Google-Zugangsdaten sind dafür nicht nötig. Spreaker-Teile werden normalisiert, bei Worship entscheidet der Schalter **Worship normalisieren**. Die Dateien liegen getrennt in den Unterordnern `spreaker` und `drive`. FFmpeg muss installiert sein. Der Export funktioniert auch offline und bei Browser-403.
+
 ## GitHub-Update-Meldung
 
 Die App prüft beim Start höchstens einmal täglich den neuesten stabilen Release des öffentlichen Projekts `marushan491/lwmc-nbg-uploader`. **Nach Updates suchen** prüft jederzeit manuell. In den Einstellungen lässt sich die automatische Prüfung ausschalten. Die Prüfung benötigt Internet und sendet keine Aufnahmen oder OAuth-Zugangsdaten an GitHub.

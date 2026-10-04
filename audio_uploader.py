@@ -486,28 +486,39 @@ def gui(cfg):
     logs.pack(fill='both', expand=True, pady=8)
     events = queue.Queue()
     busy = False
-    def start():
+    def start(export=False):
         nonlocal busy
         sp, dr = files['spreaker'][:], files['drive'][:]
         if not sp and not dr:
             messagebox.showinfo('Dateien fehlen', 'Bitte mindestens eine WAV- oder MP3-Datei auswählen.')
             return
+        job_cfg = json.loads(json.dumps(cfg))
+        if export:
+            destination = filedialog.askdirectory(parent=root, title='Zielordner für MP3-Export wählen', mustexist=True)
+            if not destination:
+                return
+            job_cfg['audio']['output_dir'] = destination
         busy = True
         for b in buttons:
             b.configure(state='disabled')
         start_button.configure(state='disabled')
-        options = dict(normalize_drive=norm.get(), parallel=parallel.get(), public=public.get(), convert_only=dry.get())
+        options = dict(normalize_drive=norm.get(), parallel=parallel.get(), public=public.get(), convert_only=export or dry.get())
         def work():
             try:
-                ok = run_jobs(cfg, sp, dr, log=lambda x: events.put(('log', x)), **options)
+                ok = run_jobs(job_cfg, sp, dr, log=lambda x: events.put(('log', x)), **options)
                 events.put(('log', 'Abgeschlossen.' if ok else 'Mit Fehlern abgeschlossen; Protokoll prüfen.'))
             except Exception as exc:
                 events.put(('log', 'FEHLER: ' + str(exc)))
             finally:
                 events.put(('done', None))
         threading.Thread(target=work, daemon=True).start()
-    start_button = ttk.Button(frame, text='Konvertierung / Upload starten', command=start)
-    start_button.pack(fill='x')
+    action_bar = ttk.Frame(frame)
+    action_bar.pack(fill='x')
+    start_button = ttk.Button(action_bar, text='Konvertierung / Upload starten', command=start)
+    start_button.pack(side='left', fill='x', expand=True)
+    export_button = ttk.Button(action_bar, text='MP3 exportieren – ohne Anmeldung', command=lambda: start(True))
+    export_button.pack(side='left', fill='x', expand=True, padx=(8, 0))
+    buttons.append(export_button)
     def start_update_check(manual=False):
         if not manual and not cfg['updates'].get('check_on_start', True):
             return
