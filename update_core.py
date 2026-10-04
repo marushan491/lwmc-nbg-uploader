@@ -91,12 +91,13 @@ def apply_update(manifest_path, wait=wait_for_exit, restart=launch, startup_time
     manifest_path = Path(manifest_path).resolve()
     work = manifest_path.parent
     data = json.loads(manifest_path.read_text(encoding='utf-8'))
-    target, staged, backup = (Path(data[key]) for key in ('target', 'staged', 'backup'))
+    raw_target, raw_staged, raw_backup = (Path(data[key]) for key in ('target', 'staged', 'backup'))
+    target, staged, backup = (p.resolve() for p in (raw_target, raw_staged, raw_backup))
     relative = Path(data['executable'])
-    if (not target.is_absolute() or target.parent == target or not target.is_dir() or target.is_symlink()
-            or not staged.resolve().is_relative_to(work) or target.parent != work.parent
-            or not work.name.startswith('.lwmc-update-') or staged.is_symlink()
-            or backup.parent != target.parent or backup.is_symlink() or not backup.name.startswith('.lwmc-backup-')
+    if (not raw_target.is_absolute() or target.parent == target or not target.is_dir() or raw_target.is_symlink()
+            or not staged.is_relative_to(work) or target.parent != work.parent
+            or not work.name.startswith('.lwmc-update-') or raw_staged.is_symlink()
+            or backup.parent != target.parent or raw_backup.is_symlink() or not backup.name.startswith('.lwmc-backup-')
             or relative.is_absolute() or '..' in relative.parts or not (staged / relative).is_file()
             or backup.exists()):
         raise RuntimeError('Ungültiger Update-Auftrag. Die Anwendung bleibt unverändert.')
@@ -152,13 +153,13 @@ def confirm_startup(version):
 
 def cleanup_finished(target):
     """A previous Windows helper cannot delete its own executable while running."""
-    target = Path(target).absolute()
+    target = Path(target).resolve()
     for work in target.parent.glob('.lwmc-update-*'):
         if not work.is_dir() or work.is_symlink() or not (work / 'finished.json').is_file():
             continue
         try:
             data = json.loads((work / 'install.json').read_text(encoding='utf-8'))
-            if Path(data['target']) == target:
+            if Path(data['target']).resolve() == target:
                 shutil.rmtree(work, ignore_errors=True)
         except (OSError, ValueError, KeyError):
             pass

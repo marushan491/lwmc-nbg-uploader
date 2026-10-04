@@ -1,4 +1,5 @@
 import tempfile
+import gc
 import os
 import sys
 from pathlib import Path
@@ -37,6 +38,10 @@ class GuiTests(unittest.TestCase):
                 # ttk progress timers are Tcl callbacks, not Python commands.
                 self.root.tk.call('after', 'cancel', job)
             self.root.destroy()
+            self.root = None
+            # Tcl interpreters must be finalized on the thread that created them,
+            # before subsequent audio worker threads can trigger cyclic GC.
+            gc.collect()
         if hasattr(self, 'temp'):
             self.temp.cleanup()
     def test_editor_destinations_cut_and_undo(self):
