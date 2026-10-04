@@ -1,4 +1,6 @@
 import tempfile
+import os
+import sys
 from pathlib import Path
 import threading
 import time
@@ -19,6 +21,8 @@ def button(root, label):
     return next(w for w in widgets(root) if w.winfo_class() == 'TButton' and w.cget('text') == label)
 
 
+@unittest.skipIf(os.environ.get('GITHUB_ACTIONS') == 'true' and sys.platform == 'darwin',
+                     'Tk window tests require a local macOS desktop; CI tests run on Windows/Linux')
 class GuiTests(unittest.TestCase):
     def setUp(self):
         try:

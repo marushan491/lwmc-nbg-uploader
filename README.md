@@ -195,7 +195,7 @@ Auf Windows `start-windows.bat` statt `./start.sh` verwenden. Für Terminal-Aufr
 python3 -m unittest discover -s tests -v
 ```
 
-Die Audio-Integrationstests benötigen `ffmpeg` und `ffprobe`; ohne diese werden nur die Audiotests übersprungen. Weitere Tests prüfen Parallelbetrieb, getrennte Normalisierung, Fehlerisolation, Schnitt/Verbindung, unveränderte Originale, Update-Versionen, OAuth-State und Anmelde-Abbruch. GUI-Tests prüfen die Zielzuordnung und dass eine verspätete OAuth-Antwort die Oberfläche nicht erneut sperrt. Sie benötigen eine grafische Sitzung; auf Linux führt CI sie mit Xvfb aus.
+Die Audio-Integrationstests benötigen `ffmpeg` und `ffprobe`; ohne diese werden nur die Audiotests übersprungen. Weitere Tests prüfen Parallelbetrieb, getrennte Normalisierung, Fehlerisolation, Schnitt/Verbindung, unveränderte Originale, Update-Versionen, OAuth-State und Anmelde-Abbruch. GUI-Tests prüfen die Zielzuordnung und dass eine verspätete OAuth-Antwort die Oberfläche nicht erneut sperrt. Sie benötigen eine grafische Sitzung; auf Linux führt CI sie mit Xvfb aus. Die Tk-Fenstertests laufen in CI auf Windows und Linux; auf macOS benötigen sie eine lokale Desktop-Sitzung und werden auf den CI-Runnern übersprungen. Die übrigen Tests und der Build-/Versions-Starttest laufen auch auf macOS.
 
 Repository: https://github.com/marushan491/lwmc-nbg-uploader
 
