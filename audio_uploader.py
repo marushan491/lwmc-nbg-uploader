@@ -333,25 +333,44 @@ def gui(cfg):
         raise RuntimeError('Tkinter fehlt; README beachten oder Terminal-Modus verwenden.') from exc
     root = tk.Tk()
     root.title('LWMC NBG Uploader · v' + VERSION)
-    root.geometry('930x750')
-    root.minsize(880, 700)
-    frame = ttk.Frame(root, padding=15)
+    root.geometry('960x780')
+    root.minsize(900, 760)
+    style = ttk.Style(root)
+    if 'clam' in style.theme_names():
+        style.theme_use('clam')
+    style.configure('.', font=('', 10), background='#f4f6fa', foreground='#202d42')
+    style.configure('TButton', padding=(12, 7))
+    style.configure('TLabel', background='#f4f6fa')
+    style.configure('Muted.TLabel', foreground='#52627a')
+    style.configure('Title.TLabel', font=('', 22, 'bold'))
+    style.configure('Primary.TButton', font=('', 11, 'bold'), background='#275bcb', foreground='white', padding=(18, 10))
+    style.map('Primary.TButton', background=[('disabled', '#ccd3df'), ('active', '#1948a7')],
+              foreground=[('disabled', '#64748b'), ('active', 'white')])
+    style.configure('TLabelframe', padding=12)
+    style.configure('TLabelframe.Label', font=('', 11, 'bold'))
+    frame = ttk.Frame(root, padding=22)
     frame.pack(fill='both', expand=True)
-    ttk.Label(frame, text='Audio schneiden → MP3 → Upload', font=('', 19, 'bold')).pack(anchor='w')
-    ttk.Label(frame, text='WAV / MP3 direkt auswählen oder die Aufnahme im Audio-Editor in Teile aufteilen.').pack(anchor='w', pady=(4, 12))
+    ttk.Label(frame, text='Deine Aufnahme. Fertig als MP3.', style='Title.TLabel').pack(anchor='w')
+    ttk.Label(frame, text='Dateien auswählen, bei Bedarf schneiden und anschließend speichern oder hochladen.', style='Muted.TLabel').pack(anchor='w', pady=(4, 16))
     files = {'spreaker': [], 'drive': []}
     route_lists = {}
     buttons = []
     editor_bar = ttk.Frame(frame)
     editor_bar.pack(fill='x', pady=(0, 8))
-    for route, heading in [('spreaker', 'Spreaker · immer normalisieren'), ('drive', 'Worship → Google Drive')]:
-        group = ttk.LabelFrame(frame, text=heading, padding=8)
-        group.pack(fill='x', pady=4)
-        listing = tk.Listbox(group, height=4)
+    route_area = ttk.Frame(frame)
+    route_area.pack(fill='x')
+    route_area.columnconfigure((0, 1), weight=1, uniform='routes')
+    for column, (route, heading) in enumerate([('spreaker', 'Predigt · Spreaker'), ('drive', 'Worship · Google Drive')]):
+        group = ttk.LabelFrame(route_area, text=heading, padding=12)
+        group.grid(row=0, column=column, sticky='nsew', padx=(0, 8) if column == 0 else (8, 0))
+        ttk.Label(group, text='Lautstärke wird immer normalisiert.' if route == 'spreaker' else 'Normalisierung kannst du unten einschalten.', style='Muted.TLabel').pack(anchor='w', pady=(0, 8))
+        listing = tk.Listbox(group, height=5, background='white', foreground='#202d42',
+                             selectbackground='#275bcb', relief='flat', highlightthickness=1,
+                             highlightbackground='#d8dfe9', activestyle='none')
         route_lists[route] = listing
-        listing.pack(side='left', fill='both', expand=True)
+        listing.pack(fill='both', expand=True)
         controls = ttk.Frame(group)
-        controls.pack(side='right', padx=(10, 0))
+        controls.pack(fill='x', pady=(8, 0))
         def add(r=route, box=listing):
             selected = filedialog.askopenfilenames(title='Audiodateien auswählen', filetypes=[('WAV / MP3', '*.wav *.WAV *.mp3 *.MP3')])
             for path in selected:
@@ -361,9 +380,9 @@ def gui(cfg):
         def clear(r=route, box=listing):
             files[r].clear()
             box.delete(0, 'end')
-        for label, command in [('Audio auswählen', add), ('Liste leeren', clear)]:
+        for label, command in [('Dateien hinzufügen', add), ('Liste leeren', clear)]:
             b = ttk.Button(controls, text=label, command=command)
-            b.pack(fill='x', pady=2)
+            b.pack(side='left', padx=(0, 6))
             buttons.append(b)
     def receive_clips(result):
         for route, path in result:
@@ -372,7 +391,7 @@ def gui(cfg):
                 if path not in files[destination]:
                     files[destination].append(path)
                     route_lists[destination].insert('end', Path(path).name)
-        events.put(('log', f'{len(result)} geschnittene Teile in die Upload-Listen übernommen.'))
+        events.put(('log', f'{len(result)} geschnittene Teile in die Dateilisten übernommen.'))
     def open_editor():
         from audio_editor import AudioEditor
         AudioEditor(root, STATE / 'edits', receive_clips)
@@ -383,12 +402,32 @@ def gui(cfg):
     ttk.Label(editor_bar, textvariable=update_label).pack(side='right', padx=8)
     update_button = ttk.Button(editor_bar, text='Nach Updates suchen', command=lambda: start_update_check(True))
     update_button.pack(side='right')
-    norm, parallel, public, dry = tk.BooleanVar(), tk.BooleanVar(value=True), tk.BooleanVar(), tk.BooleanVar()
-    for text, var in [('Worship normalisieren', norm), ('Beide Wege parallel ausführen', parallel),
-                      ('Spreaker öffentlich veröffentlichen (sonst privat)', public), ('Nur MP3 erzeugen, ohne Upload', dry)]:
-        ttk.Checkbutton(frame, text=text, variable=var).pack(anchor='w', pady=2)
+    norm, parallel, public = tk.BooleanVar(), tk.BooleanVar(value=True), tk.BooleanVar()
+    mode = tk.StringVar(value='export')
+    output = ttk.LabelFrame(frame, text='Was möchtest du machen?', padding=12)
+    output.pack(fill='x', pady=(14, 8))
+    mode_bar = ttk.Frame(output)
+    mode_bar.pack(fill='x')
+    for label, value in [('MP3 speichern', 'export'), ('MP3 speichern und hochladen', 'upload')]:
+        choice = ttk.Radiobutton(mode_bar, text=label, value=value, variable=mode, command=lambda: refresh_mode())
+        choice.pack(side='left', padx=(0, 22))
+        buttons.append(choice)
+    mode_hint = tk.StringVar()
+    ttk.Label(output, textvariable=mode_hint, style='Muted.TLabel').pack(anchor='w', pady=(8, 4))
+    norm_button = ttk.Checkbutton(output, text='Worship-Lautstärke normalisieren', variable=norm)
+    norm_button.pack(anchor='w', pady=3)
+    buttons.append(norm_button)
+    upload_options = ttk.Frame(output)
+    public_button = ttk.Checkbutton(upload_options, text='Spreaker öffentlich veröffentlichen (sonst privat)', variable=public)
+    public_button.pack(anchor='w', pady=3)
+    buttons.append(public_button)
+    advanced = ttk.Frame(frame)
+    advanced.pack(fill='x')
+    parallel_button = ttk.Checkbutton(advanced, text='Predigt und Worship gleichzeitig verarbeiten', variable=parallel)
+    parallel_button.pack(anchor='w')
+    buttons.append(parallel_button)
     account_bar = ttk.Frame(frame)
-    account_bar.pack(fill='x', pady=6)
+    # Accounts appear only for upload; saving MP3s never requires signing in.
     def settings():
         popup = tk.Toplevel(root)
         popup.title('Einstellungen')
@@ -482,43 +521,65 @@ def gui(cfg):
         button = ttk.Button(account_bar, text=text, command=lambda r=route: login(r))
         button.pack(side='left', padx=6)
         buttons.append(button)
-    logs = tk.Text(frame, height=9, wrap='word', state='disabled')
-    logs.pack(fill='both', expand=True, pady=8)
+    action_bar = ttk.Frame(frame)
+    action_bar.pack(fill='x', pady=(12, 8))
+    status = tk.StringVar(value='Bereit · WAV- oder MP3-Dateien hinzufügen.')
+    progress = ttk.Progressbar(frame, mode='indeterminate')
+    progress.pack(fill='x', pady=(0, 4))
+    ttk.Label(frame, textvariable=status, style='Muted.TLabel').pack(anchor='w')
+    details = ttk.LabelFrame(frame, text='Verlauf', padding=6)
+    details.pack(fill='both', expand=True, pady=(8, 0))
+    logs = tk.Text(details, height=5, wrap='word', state='disabled', relief='flat',
+                   background='white', foreground='#52627a', padx=8, pady=8)
+    logs.pack(fill='both', expand=True)
     events = queue.Queue()
     busy = False
-    def start(export=False):
+    def start():
         nonlocal busy
         sp, dr = files['spreaker'][:], files['drive'][:]
         if not sp and not dr:
             messagebox.showinfo('Dateien fehlen', 'Bitte mindestens eine WAV- oder MP3-Datei auswählen.')
             return
+        export = mode.get() == 'export'
         job_cfg = json.loads(json.dumps(cfg))
-        if export:
-            destination = filedialog.askdirectory(parent=root, title='Zielordner für MP3-Export wählen', mustexist=True)
-            if not destination:
-                return
-            job_cfg['audio']['output_dir'] = destination
+        destination = filedialog.askdirectory(parent=root, title='Ordner zum Speichern der MP3-Dateien wählen', mustexist=True)
+        if not destination:
+            return
+        job_cfg['audio']['output_dir'] = destination
         busy = True
         for b in buttons:
             b.configure(state='disabled')
         start_button.configure(state='disabled')
-        options = dict(normalize_drive=norm.get(), parallel=parallel.get(), public=public.get(), convert_only=export or dry.get())
+        status.set('MP3-Dateien werden gespeichert …' if export else 'MP3-Dateien werden gespeichert und hochgeladen …')
+        progress.start(12)
+        options = dict(normalize_drive=norm.get(), parallel=parallel.get(), public=public.get(), convert_only=export)
         def work():
             try:
                 ok = run_jobs(job_cfg, sp, dr, log=lambda x: events.put(('log', x)), **options)
                 events.put(('log', 'Abgeschlossen.' if ok else 'Mit Fehlern abgeschlossen; Protokoll prüfen.'))
+                events.put(('status', f'MP3-Dateien gespeichert in {destination}' if ok and export else
+                            ('MP3-Dateien gespeichert und Upload abgeschlossen.' if ok else 'Ein Vorgang ist fehlgeschlagen. Details stehen im Verlauf.')))
             except Exception as exc:
                 events.put(('log', 'FEHLER: ' + str(exc)))
+                events.put(('status', 'Vorgang fehlgeschlagen. Details stehen im Verlauf.'))
             finally:
                 events.put(('done', None))
         threading.Thread(target=work, daemon=True).start()
-    action_bar = ttk.Frame(frame)
-    action_bar.pack(fill='x')
-    start_button = ttk.Button(action_bar, text='Konvertierung / Upload starten', command=start)
-    start_button.pack(side='left', fill='x', expand=True)
-    export_button = ttk.Button(action_bar, text='MP3 exportieren – ohne Anmeldung', command=lambda: start(True))
-    export_button.pack(side='left', fill='x', expand=True, padx=(8, 0))
-    buttons.append(export_button)
+    start_button = ttk.Button(action_bar, text='MP3 speichern', style='Primary.TButton', command=start)
+    start_button.pack(side='right')
+    ttk.Label(action_bar, text='Der Zielordner wird beim Start ausgewählt.', style='Muted.TLabel').pack(side='left')
+    def refresh_mode():
+        upload = mode.get() == 'upload'
+        start_button.configure(text='Speichern und hochladen' if upload else 'MP3 speichern')
+        mode_hint.set('Speichert MP3s im gewählten Ordner und lädt sie in die zugeordneten Konten hoch.' if upload else
+                      'Speichert MP3s auf deinem Gerät. Funktioniert ohne Anmeldung und auch offline.')
+        if upload:
+            upload_options.pack(fill='x')
+            account_bar.pack(fill='x', pady=6, before=action_bar)
+        else:
+            upload_options.pack_forget()
+            account_bar.pack_forget()
+    refresh_mode()
     def start_update_check(manual=False):
         if not manual and not cfg['updates'].get('check_on_start', True):
             return
@@ -573,12 +634,15 @@ def gui(cfg):
                     if manual:
                         messagebox.showinfo('Updates', 'Du verwendest die aktuelle stabile Version.')
             elif kind == 'done':
+                progress.stop()
                 busy = False
                 login_active = False
                 cancel_button.configure(state='disabled')
                 for b in buttons:
                     b.configure(state='normal')
                 start_button.configure(state='normal')
+            elif kind == 'status':
+                status.set(value)
             else:
                 logs.configure(state='normal')
                 logs.insert('end', value + '\n')

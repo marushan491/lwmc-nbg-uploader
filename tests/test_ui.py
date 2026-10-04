@@ -99,3 +99,41 @@ class GuiTests(unittest.TestCase):
              patch.object(app, 'login_spreaker', side_effect=login), \
              patch.object(app, 'drive_service', side_effect=drive):
             app.gui(cfg)
+
+    def test_single_action_export_default_and_upload_choice(self):
+        cfg = {'spreaker': {}, 'drive': {}, 'audio': {}, 'updates': {'check_on_start': False}}
+        def exercise():
+            self.root.update()
+            self.assertEqual(len([w for w in widgets(self.root) if w.winfo_class() == 'TButton'
+                                 and w.cget('style') == 'Primary.TButton']), 1)
+            self.assertFalse(button(self.root, 'Drive anmelden').master.winfo_manager())
+            source = str(Path(self.temp.name) / 'recording.wav')
+            with patch('tkinter.filedialog.askopenfilenames', return_value=[source]):
+                button(self.root, 'Dateien hinzufügen').invoke()
+            button(self.root, 'MP3 speichern').invoke()
+            self.assertTrue(called.wait(1))
+            self.assertTrue(run.call_args.kwargs['convert_only'])
+            self.assertEqual(run.call_args.args[0]['audio']['output_dir'], self.temp.name)
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline and 'disabled' in button(self.root, 'MP3 speichern').state():
+                self.root.update()
+                time.sleep(0.01)
+            upload = next(w for w in widgets(self.root) if w.winfo_class() == 'TRadiobutton'
+                          and w.cget('text') == 'MP3 speichern und hochladen')
+            upload.invoke()
+            self.root.update()
+            self.assertEqual(button(self.root, 'Drive anmelden').master.winfo_manager(), 'pack')
+            called.clear()
+            button(self.root, 'Speichern und hochladen').invoke()
+            self.assertTrue(called.wait(1))
+            self.assertFalse(run.call_args.kwargs['convert_only'])
+        called = threading.Event()
+        def process(*args, **kwargs):
+            called.set()
+            return True
+        with patch.object(tk, 'Tk', return_value=self.root), \
+             patch.object(self.root, 'mainloop', side_effect=exercise), \
+             patch.object(app, 'STATE', Path(self.temp.name)), \
+             patch('tkinter.filedialog.askdirectory', return_value=self.temp.name), \
+             patch.object(app, 'run_jobs', side_effect=process) as run:
+            app.gui(cfg)

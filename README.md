@@ -64,8 +64,8 @@ Alternativ nach der Einrichtung `Start.command` doppelklicken. Im Binärpaket **
 3. Für Drive die OAuth-Desktop-JSON auswählen, optional eine Ordner-ID eintragen.
 4. Speichern, anschließend **Spreaker anmelden** und/oder **Drive anmelden**.
 5. WAV- oder MP3-Dateien direkt auswählen oder im **Audio-Editor** Teile vorbereiten.
-6. Optional Worship normalisieren; optional Parallelbetrieb ausschalten.
-7. **Konvertierung / Upload starten**.
+6. **MP3 speichern und hochladen** wählen. Optional Worship normalisieren; optional Parallelbetrieb ausschalten.
+7. **Speichern und hochladen** drücken und einen Zielordner wählen. Die MP3-Dateien werden dort gespeichert und danach hochgeladen.
 
 Der Episodentitel und der Drive-Dateiname werden aus dem WAV-Dateinamen abgeleitet. Zum Beispiel `Predigt 04.10.2026.wav` → Titel `Predigt 04.10.2026`. Eine Beschreibung für Spreaker lässt sich in `config.json` setzen.
 
@@ -89,7 +89,7 @@ Beispiel: Predigt 1 → Spreaker, Predigt 2 → Spreaker, Worship → Drive. Die
 
 ## MP3 exportieren ohne Anmeldung
 
-**MP3 exportieren – ohne Anmeldung** im Hauptfenster fragt nach einem Zielordner und speichert die ausgewählten oder geschnittenen Teile dort als MP3. Es erfolgt kein Upload und keine Spreaker-/Google-Anmeldung; auch Show-ID und Google-Zugangsdaten sind dafür nicht nötig. Spreaker-Teile werden normalisiert, bei Worship entscheidet der Schalter **Worship normalisieren**. Die Dateien liegen getrennt in den Unterordnern `spreaker` und `drive`. FFmpeg muss installiert sein. Der Export funktioniert auch offline und bei Browser-403.
+**MP3 speichern** ist im Hauptfenster vorausgewählt. Dateien hinzufügen, bei Bedarf schneiden, dann den einzigen Hauptbutton **MP3 speichern** drücken und einen Zielordner wählen. Es erfolgt kein Upload und keine Spreaker-/Google-Anmeldung; auch Show-ID und Google-Zugangsdaten sind dafür nicht nötig. Predigt-/Spreaker-Teile werden normalisiert, bei Worship entscheidet der Schalter **Worship-Lautstärke normalisieren**. Die Dateien liegen getrennt in den Unterordnern `spreaker` und `drive`. FFmpeg muss installiert sein. Das Speichern funktioniert auch offline und bei Browser-403. Erst bei **MP3 speichern und hochladen** erscheinen die Konto- und Veröffentlichungsoptionen.
 
 ## GitHub-Update-Meldung
 
